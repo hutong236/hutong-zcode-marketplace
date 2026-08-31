@@ -25,7 +25,7 @@ GitHub Issue machine state comment plus actual Issue/PR/Actions facts > Git bran
 
 ## V2 control plane
 
-Use the bundled `cmdb-control` MCP tools for preflight, initialization, Issue-first Work Item creation, transitions, validation, GitHub hydrate/sync, isolated worktree creation, privileged-action authorization, and delivery verification. Slash commands are orchestration prompts; they never hand-edit state or use the compatibility CLI for mutations. On resume/status request GitHub refresh before trusting cache. State comments use `cmdb-dev-state:v2` and labels use `cmdb:<state>`.
+Use the bundled `cmdb-control` MCP tools for preflight, initialization, Issue-first Work Item creation, transitions, validation, GitHub hydrate/sync, isolated worktree creation, PR-check verification, privileged-action authorization, and delivery verification. Slash commands are orchestration prompts; they never hand-edit state or use the compatibility CLI for mutations. On resume/status request GitHub refresh before trusting cache. State comments use `cmdb-dev-state:v2` and labels use `cmdb:<state>`.
 
 The state CLI remains a diagnostic/compatibility surface only. MCP validates inputs and lifecycle invariants server-side. Plugin subagents have exhaustive tool lists without MCP tools and must never be given control-plane access.
 
@@ -63,8 +63,8 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 8. Reviewer changes_requested -> Coder -> Tester -> Reviewer.
 9. Reviewer approved -> Primary Agent commits only related changes, calls `cmdb_authorize(git-push)`, and performs one authorized push.
 10. Create PR with `gh pr create`; body uses `Refs #<issue>`, never `Closes`/`Fixes`.
-11. Verify the default branch has an enforced required-check policy and every required PR check concluded success. Missing or non-successful checks block merge; failed implementation checks return to Coder with evidence.
-12. Low/medium risk: perform one authorized merge only after the enforced server-side gate. High risk: stop at `waiting_human_merge`; human approval never bypasses required checks.
+11. Call `cmdb_verify_pr_checks`. It verifies the exact PR Head SHA and successful `CMDB PR Checks / verify`. Public repositories require GitHub-side enforcement. A private repository without paid branch protection records `control_plane_verified` instead; missing or non-successful checks always block.
+12. GitHub-enforced low/medium risk may perform one authorized merge. High risk and every control-plane-guarded private-repository merge stop at `waiting_human_merge`. After Gate B, the merge command must include `--match-head-commit <persisted-pr-head-sha>`; human approval never bypasses checks.
 13. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or, only when the persisted delivery policy allows it, skip. A missing image workflow never authorizes an automatic skip.
 14. Tag confirmed via `/cmdb_tag_approve <ID> [vX.Y.Z]`: create an annotated tag on the merged SHA (name from the user, else next patch of the latest `v*` tag — state it), push the tag, wait for the tag-triggered image build, dispatch Build Checker.
 15. Build Checker downloads both the Actions artifact and GitHub Release `delivery-metadata.json`, independently queries the matching GHCR version/remote manifest, verifies SBOM and provenance attestations, and compares tag commit to merged SHA. Logs alone never prove delivery. Primary Agent calls `cmdb_verify_delivery` with both metadata objects and the registry digest.
@@ -73,7 +73,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 
 ## Done definition
 
-Done requires approval, coder completed, tester passed, reviewer approved, PR merged, Issue closed, and exactly one of: a human-confirmed tag whose image build, GHCR digest, Release metadata, SBOM, and provenance are verified, or a human-confirmed skip with `build_status: skipped`.
+Done requires approval, coder completed, tester passed, reviewer approved, successful PR workflow evidence, a verified GitHub or control-plane merge guard, PR merged, Issue closed, and exactly one of: a human-confirmed tag whose image build, GHCR digest, Release metadata, SBOM, and provenance are verified, or a human-confirmed skip with `build_status: skipped`.
 
 ## GitHub communication
 

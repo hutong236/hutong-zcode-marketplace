@@ -11,7 +11,7 @@ import { analyzeCommand, evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
 
 const clock = () => new Date("2026-08-31T12:00:00Z");
 
-function repositoryWithItem(status) {
+function repositoryWithItem(status, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-auth-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
   const item = { ...createWorkItem({
@@ -20,7 +20,7 @@ function repositoryWithItem(status) {
     title: "Authorization test",
     risk_level: "low",
     delivery_required: true,
-  }, clock), status };
+  }, clock), status, ...overrides };
   writeStore(root, { schema_version: 2, repository: "acme/cmdb", revision: 0, updated_at: clock().toISOString(), items: { [item.id]: item } });
   return { root, item };
 }
@@ -60,6 +60,38 @@ test("authorization rejects the wrong lifecycle state and non-orchestrators", ()
     action: "git-push",
     actor: "cmdb-coder",
   }, clock), /Primary Agent/);
+});
+
+test("PR merge authorization pins the control-plane-verified head SHA", () => {
+  const sha = "a".repeat(40);
+  const { root } = repositoryWithItem("merging", {
+    pr_number: 42,
+    reviewer_result: "approved",
+    pr_checks: "passed",
+    pr_check_name: "CMDB PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+    pr_head_sha: sha,
+    merge_guard_mode: "control_plane_verified",
+    required_checks_enforced: false,
+  });
+  const authorization = issueAuthorization(root, {
+    id: "REQ-25",
+    action: "pr-merge",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(() => consumeAuthorization(root, {
+    token: authorization.token,
+    action: "pr-merge",
+    cwd: root,
+    command: "gh pr merge 42 --squash",
+  }, clock), /pin verified head SHA/);
+  const consumed = consumeAuthorization(root, {
+    token: authorization.token,
+    action: "pr-merge",
+    cwd: root,
+    command: `gh pr merge 42 --squash --match-head-commit ${sha}`,
+  }, clock);
+  assert.equal(consumed.target.pr_head_sha, sha);
 });
 
 test("guard classifies protected shell operations", () => {

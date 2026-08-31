@@ -7,6 +7,7 @@ import { validateDeliveryEvidence } from "../scripts/lib/delivery.mjs";
 import { runPreflight } from "../scripts/lib/preflight.mjs";
 import { initializeTargetRepository } from "../scripts/lib/initializer.mjs";
 import { writeProjection } from "../scripts/lib/projection.mjs";
+import { DEFAULT_PR_CHECK, verifyPullRequestChecks } from "../scripts/lib/pr-checks.mjs";
 
 const objectSchema = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string", minLength: 1 };
@@ -15,7 +16,7 @@ const id = { type: "string", pattern: "^(REQ|BUG)-[1-9][0-9]*$" };
 export const TOOL_DEFINITIONS = Object.freeze([
   {
     name: "cmdb_preflight",
-    description: "Read-only readiness check for Git, GitHub, required PR checks, branch protection, and verifiable image delivery.",
+    description: "Read-only readiness check for Git, GitHub, the applicable PR merge guard, and verifiable image delivery.",
     inputSchema: objectSchema({}),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
@@ -81,6 +82,16 @@ export const TOOL_DEFINITIONS = Object.freeze([
       id, actor: { const: "orchestrator" }, evidence: text, branch: { type: "string" }, base: { type: "string" },
       sync: { type: "boolean", default: true }, repository: { type: "string" },
     }, ["id", "actor", "evidence", "base"]),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: "cmdb_verify_pr_checks",
+    description: "Verify the exact PR head and successful workflow check; use GitHub enforcement when available or the private-repository control-plane guard otherwise.",
+    inputSchema: objectSchema({
+      id, check_name: { type: "string", minLength: 1, default: DEFAULT_PR_CHECK },
+      actor: { const: "orchestrator" }, evidence: text,
+      sync: { type: "boolean", default: true }, repository: { type: "string" },
+    }, ["id", "actor", "evidence"]),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
@@ -189,7 +200,7 @@ export function callTool(name, args = {}, context = {}) {
   }
 
   if (name === "cmdb_transition") {
-    if (["start_planning", "image_verified"].includes(args.event)) {
+    if (["start_planning", "checks_passed", "image_verified"].includes(args.event)) {
       throw new Error(`${args.event} is reserved for its dedicated MCP evidence tool`);
     }
     const item = getItem(root, args.id);
@@ -237,6 +248,23 @@ export function callTool(name, args = {}, context = {}) {
       patch: { branch: worktree.branch, worktree_path: worktree.path },
     });
     return { worktree, ...persist(root, next, { sync: args.sync !== false, repository: args.repository }) };
+  }
+
+  if (name === "cmdb_verify_pr_checks") {
+    const item = getItem(root, args.id);
+    const repository = repositoryFor(root, args.repository);
+    const verification = verifyPullRequestChecks({
+      root,
+      repository,
+      item,
+      checkName: args.check_name ?? DEFAULT_PR_CHECK,
+    });
+    const next = applyEvent(item, "checks_passed", {
+      actor: args.actor,
+      evidence: args.evidence,
+      patch: verification.patch,
+    });
+    return { verification, ...persist(root, next, { sync: args.sync !== false, repository }) };
   }
 
   if (name === "cmdb_authorize") {

@@ -22,6 +22,7 @@ V2 separates orchestration, authority, execution, and evidence.
 | `cmdb_status` / `cmdb_validate` | Reconcile and validate truth |
 | `cmdb_sync` / `cmdb_hydrate` | Move canonical machine state to/from GitHub |
 | `cmdb_worktree_create` | Create the one isolated Work Item worktree |
+| `cmdb_verify_pr_checks` | Verify the exact PR head/check and select the available merge guard |
 | `cmdb_authorize` | Issue one state-bound token for a protected action |
 | `cmdb_verify_delivery` | Cross-check merged SHA, Actions, Release, GHCR, SBOM and provenance |
 
@@ -32,7 +33,10 @@ not assumed from the client.
 ## Gate invariants
 
 - Gate A is required before a worktree or business-code write.
-- Gate B is required only for high-risk merge and never bypasses server checks.
+- Gate B is required for high-risk merge and for every private-repository
+  control-plane merge. It never bypasses workflow checks.
+- Public repositories use GitHub required checks. Private repositories without
+  paid branch protection use an exact-SHA MCP guard and cannot auto-merge.
 - Gate C is required after merge before tag/image delivery or an explicitly
   policy-allowed non-runtime skip.
 - Automatic rework is limited to three rounds; the next failure blocks.

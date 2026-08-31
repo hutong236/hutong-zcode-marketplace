@@ -22,6 +22,11 @@ export const STATES = Object.freeze([
 ]);
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
+export const MERGE_GUARD_MODES = Object.freeze([
+  "unverified",
+  "github_required_checks",
+  "control_plane_verified",
+]);
 export const DEFAULT_REWORK_LIMIT = 3;
 export const HUMAN_EVENTS = new Set([
   "approve_requirement",
@@ -62,6 +67,10 @@ const PATCH_FIELDS = new Set([
   "merged_sha",
   "next_action",
   "pr_checks",
+  "pr_check_name",
+  "pr_check_run_url",
+  "pr_head_sha",
+  "merge_guard_mode",
   "required_checks_enforced",
   "pr_number",
   "provenance_status",
@@ -102,11 +111,25 @@ function filteredPatch(patch = {}) {
   return result;
 }
 
+export function mergeGuardSatisfied(item) {
+  const evidenceComplete = SHA_PATTERN.test(String(item.pr_head_sha ?? ""))
+    && /^https:\/\/github\.com\//.test(String(item.pr_check_run_url ?? ""))
+    && Boolean(String(item.pr_check_name ?? "").trim());
+  if (!evidenceComplete) return false;
+  if (item.merge_guard_mode === "github_required_checks") {
+    return item.required_checks_enforced === true;
+  }
+  return item.merge_guard_mode === "control_plane_verified"
+    && item.required_checks_enforced === false;
+}
+
 export function normalizeWorkItem(item) {
   const next = structuredClone(item);
   if (next.schema_version !== 2) return next;
   const historicalDone = next.status === "done" && (
     !("required_checks_enforced" in next)
+    || !("merge_guard_mode" in next)
+    || !("pr_head_sha" in next)
     || !("registry_verified" in next)
     || !("sbom_digest" in next)
     || !("provenance_digest" in next)
@@ -121,6 +144,12 @@ export function normalizeWorkItem(item) {
   if (!("sbom_digest" in next)) next.sbom_digest = null;
   if (!("provenance_digest" in next)) next.provenance_digest = null;
   if (!("required_checks_enforced" in next)) next.required_checks_enforced = false;
+  if (!("merge_guard_mode" in next)) {
+    next.merge_guard_mode = next.required_checks_enforced ? "github_required_checks" : "unverified";
+  }
+  if (!("pr_head_sha" in next)) next.pr_head_sha = null;
+  if (!("pr_check_name" in next)) next.pr_check_name = null;
+  if (!("pr_check_run_url" in next)) next.pr_check_run_url = null;
   if (!("legacy_completion" in next)) next.legacy_completion = historicalDone;
   return next;
 }
@@ -166,6 +195,10 @@ export function createWorkItem(input, now = () => new Date()) {
     tester_result: "pending",
     reviewer_result: "pending",
     pr_checks: "unknown",
+    pr_check_name: null,
+    pr_check_run_url: null,
+    pr_head_sha: null,
+    merge_guard_mode: "unverified",
     required_checks_enforced: false,
     legacy_completion: false,
     tag_confirmation: "pending",
@@ -219,7 +252,9 @@ function targetFor(item, event, payload) {
   }
   if (event === "checks_passed") {
     if (item.status !== "pr_checking") throw new Error("checks_passed requires pr_checking");
-    return item.risk_level === "high" ? "waiting_human_merge" : "merging";
+    const needsHumanMerge = item.risk_level === "high"
+      || payload.patch?.merge_guard_mode === "control_plane_verified";
+    return needsHumanMerge ? "waiting_human_merge" : "merging";
   }
   const target = STATIC_TRANSITIONS[item.status]?.[event];
   if (!target) throw new Error(`Invalid transition: ${item.status} --${event}--> ?`);
@@ -251,13 +286,31 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   }
   if (event === "checks_passed") {
     if (item.tester_result !== "passed" || item.reviewer_result !== "approved") throw new Error("checks_passed requires passed Tester and approved Reviewer");
-    if (payload.patch?.required_checks_enforced !== true) throw new Error("checks_passed requires enforced server-side checks evidence");
+    const mode = payload.patch?.merge_guard_mode;
+    if (!MERGE_GUARD_MODES.includes(mode) || mode === "unverified") {
+      throw new Error("checks_passed requires verified merge-guard evidence");
+    }
+    if (!SHA_PATTERN.test(String(payload.patch?.pr_head_sha ?? ""))) {
+      throw new Error("checks_passed requires the verified PR head SHA");
+    }
+    if (!String(payload.patch?.pr_check_name ?? "").trim()) {
+      throw new Error("checks_passed requires the verified PR check name");
+    }
+    if (!/^https:\/\/github\.com\//.test(String(payload.patch?.pr_check_run_url ?? ""))) {
+      throw new Error("checks_passed requires a GitHub PR check URL");
+    }
+    if (mode === "github_required_checks" && payload.patch?.required_checks_enforced !== true) {
+      throw new Error("GitHub merge guard requires enforced server-side checks evidence");
+    }
+    if (mode === "control_plane_verified" && payload.patch?.required_checks_enforced !== false) {
+      throw new Error("Control-plane merge guard must not claim GitHub enforcement");
+    }
   }
   if (event === "pr_merged" && !SHA_PATTERN.test(String(payload.patch?.merged_sha ?? ""))) {
     throw new Error("pr_merged requires a 40-character merged_sha");
   }
-  if (event === "pr_merged" && (item.pr_checks !== "passed" || item.required_checks_enforced !== true || item.reviewer_result !== "approved")) {
-    throw new Error("pr_merged requires approved review and passed, enforced checks");
+  if (event === "pr_merged" && (item.pr_checks !== "passed" || !mergeGuardSatisfied(item) || item.reviewer_result !== "approved")) {
+    throw new Error("pr_merged requires approved review and a verified merge guard");
   }
   if (event === "approve_tag" && !SEMVER_TAG_PATTERN.test(String(payload.patch?.image_tag ?? ""))) {
     throw new Error("approve_tag requires the confirmed strict SemVer image_tag");
@@ -330,10 +383,19 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
     next.next_action = "create_pr";
   } else if (event === "pr_created") {
     next.pr_checks = "unknown";
+    next.pr_check_name = null;
+    next.pr_check_run_url = null;
+    next.pr_head_sha = null;
+    next.merge_guard_mode = "unverified";
     next.required_checks_enforced = false;
-    next.next_action = "verify_required_checks";
+    next.next_action = "verify_pr_checks";
   } else if (event === "checks_failed") {
     next.pr_checks = "failed";
+    next.pr_check_name = null;
+    next.pr_check_run_url = null;
+    next.pr_head_sha = null;
+    next.merge_guard_mode = "unverified";
+    next.required_checks_enforced = false;
     next.next_action = "return_to_coder";
   } else if (event === "checks_passed") {
     next.pr_checks = "passed";
@@ -386,6 +448,16 @@ export function validateWorkItem(item) {
   if (!RISKS.includes(item.risk_level)) errors.push("invalid risk_level");
   if (!String(item.title ?? "").trim()) errors.push("title required");
   if (typeof item.required_checks_enforced !== "boolean") errors.push("invalid required_checks_enforced");
+  if (!MERGE_GUARD_MODES.includes(item.merge_guard_mode)) errors.push("invalid merge_guard_mode");
+  if (item.merge_guard_mode === "github_required_checks" && item.required_checks_enforced !== true) {
+    errors.push("github merge guard requires required_checks_enforced");
+  }
+  if (item.merge_guard_mode === "control_plane_verified" && item.required_checks_enforced !== false) {
+    errors.push("control-plane guard cannot claim GitHub enforcement");
+  }
+  if (item.pr_checks === "passed" && !item.legacy_completion && !mergeGuardSatisfied(item)) {
+    errors.push("passed PR checks require complete merge-guard evidence");
+  }
   if (typeof item.legacy_completion !== "boolean") errors.push("invalid legacy_completion");
   if (item.delivery_required && item.skip_allowed) errors.push("runtime delivery cannot allow skip");
   if (!item.delivery_required && !String(item.delivery_reason ?? "").trim()) errors.push("delivery_reason required");
@@ -400,7 +472,7 @@ export function validateWorkItem(item) {
     if (item.tester_result !== "passed") errors.push("done requires passed tests");
     if (item.reviewer_result !== "approved") errors.push("done requires reviewer approval");
     if (item.pr_checks !== "passed") errors.push("done requires passed PR checks");
-    if (!item.legacy_completion && item.required_checks_enforced !== true) errors.push("done requires enforced server-side checks");
+    if (!item.legacy_completion && !mergeGuardSatisfied(item)) errors.push("done requires a verified merge guard");
     if (!SHA_PATTERN.test(String(item.merged_sha ?? ""))) errors.push("done requires merged_sha");
     if (item.delivery_required) {
       if (item.build_status !== "passed") errors.push("runtime delivery requires passed image build");

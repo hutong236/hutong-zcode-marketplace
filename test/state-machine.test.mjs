@@ -4,6 +4,13 @@ import { applyEvent, createWorkItem, validateWorkItem } from "../cmdb-dev/script
 
 const sha = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
+const githubGuard = {
+  pr_check_name: "CMDB PR Checks / verify",
+  pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+  pr_head_sha: sha,
+  merge_guard_mode: "github_required_checks",
+  required_checks_enforced: true,
+};
 const deliveryPatch = {
   image: "ghcr.io/acme/cmdb",
   image_tag: "v1.4.0",
@@ -53,7 +60,7 @@ test("non-runtime work may complete through an explicit human skip", () => {
     delivery_reason: "Documentation only",
     skip_allowed: true,
   });
-  item = { ...item, status: "waiting_tag_confirm", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", required_checks_enforced: true, merged_sha: sha };
+  item = { ...item, status: "waiting_tag_confirm", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", ...githubGuard, merged_sha: sha };
   item = move(item, "approve_skip", {}, "human:owner");
   assert.equal(item.status, "waiting_close");
   assert.equal(item.build_status, "skipped");
@@ -63,7 +70,7 @@ test("non-runtime work may complete through an explicit human skip", () => {
 });
 
 test("image verification requires a digest", () => {
-  const item = { ...runtimeItem(), status: "building", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", required_checks_enforced: true, merged_sha: sha };
+  const item = { ...runtimeItem(), status: "building", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", ...githubGuard, merged_sha: sha };
   assert.throws(() => move(item, "image_verified"), /image_digest/);
   const verified = move(item, "image_verified", deliveryPatch);
   assert.equal(verified.status, "waiting_close");
@@ -78,7 +85,7 @@ test("Gate C persists the exact SemVer tag before tag authorization", () => {
   assert.equal(approved.image_tag, "v2.0.0");
 });
 
-test("checks_passed requires persisted server-side enforcement evidence", () => {
+test("checks_passed requires persisted merge-guard evidence", () => {
   const item = {
     ...runtimeItem(),
     status: "pr_checking",
@@ -87,10 +94,28 @@ test("checks_passed requires persisted server-side enforcement evidence", () => 
     reviewer_result: "approved",
     pr_number: 42,
   };
-  assert.throws(() => move(item, "checks_passed"), /enforced server-side/);
-  const checked = move(item, "checks_passed", { required_checks_enforced: true });
+  assert.throws(() => move(item, "checks_passed"), /merge-guard evidence/);
+  const checked = move(item, "checks_passed", githubGuard);
   assert.equal(checked.status, "merging");
   assert.equal(checked.required_checks_enforced, true);
+});
+
+test("private-repository control-plane checks always stop at human Gate B", () => {
+  const item = {
+    ...runtimeItem(),
+    status: "pr_checking",
+    human_approval: "approved",
+    tester_result: "passed",
+    reviewer_result: "approved",
+    pr_number: 42,
+  };
+  const checked = move(item, "checks_passed", {
+    ...githubGuard,
+    merge_guard_mode: "control_plane_verified",
+    required_checks_enforced: false,
+  });
+  assert.equal(checked.status, "waiting_human_merge");
+  assert.equal(checked.merge_guard_mode, "control_plane_verified");
 });
 
 test("planning requires an isolated branch and worktree", () => {

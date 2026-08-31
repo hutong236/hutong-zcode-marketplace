@@ -136,6 +136,7 @@ for (const requiredFile of [
   "cmdb-dev/scripts/lib/authorization.mjs",
   "cmdb-dev/scripts/lib/delivery.mjs",
   "cmdb-dev/scripts/lib/preflight.mjs",
+  "cmdb-dev/scripts/lib/pr-checks.mjs",
   "cmdb-dev/scripts/lib/projection.mjs",
   "cmdb-dev/scripts/lib/initializer.mjs",
   "cmdb-dev/mcp/server.mjs",
@@ -149,7 +150,7 @@ for (const requiredFile of [
 }
 
 const { TOOL_DEFINITIONS } = await import(new URL("../cmdb-dev/mcp/tools.mjs", import.meta.url));
-assert(TOOL_DEFINITIONS.length === 11, `expected 11 MCP tools, found ${TOOL_DEFINITIONS.length}`);
+assert(TOOL_DEFINITIONS.length === 12, `expected 12 MCP tools, found ${TOOL_DEFINITIONS.length}`);
 assert(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size === TOOL_DEFINITIONS.length, "MCP tool names must be unique");
 
 for (const file of walk()) {

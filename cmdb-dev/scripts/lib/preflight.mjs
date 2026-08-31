@@ -30,13 +30,15 @@ export function runPreflight(root) {
   const auth = gh.ok ? run("gh", ["auth", "status"], root) : { ok: false, output: "gh unavailable" };
   add("gh_auth", auth.ok, auth.output, "Authenticate GitHub CLI for this repository");
 
-  const repositoryResult = auth.ok ? run("gh", ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"], root) : { ok: false, output: "GitHub unavailable" };
+  const repositoryResult = auth.ok ? run("gh", ["repo", "view", "--json", "nameWithOwner,defaultBranchRef,isPrivate"], root) : { ok: false, output: "GitHub unavailable" };
   let repository = null;
   let defaultBranch = null;
+  let isPrivate = false;
   if (repositoryResult.ok) {
     const data = JSON.parse(repositoryResult.output);
     repository = data.nameWithOwner;
     defaultBranch = data.defaultBranchRef?.name ?? null;
+    isPrivate = Boolean(data.isPrivate);
   }
   add("github_repository", Boolean(repository && defaultBranch), repositoryResult.output, "Grant repository read access");
 
@@ -53,6 +55,18 @@ export function runPreflight(root) {
   const requiredCheckPresent = (protection.ok && protection.output.includes("CMDB PR Checks / verify"))
     || (ruleset.ok && ruleset.output.includes("CMDB PR Checks / verify"));
   add("required_server_check", requiredCheckPresent, `branch protection: ${protection.output}; rulesets: ${ruleset.output}`, "Protect the default branch and require CMDB PR Checks / verify");
+  const controlPlaneEligible = Boolean(isPrivate && auth.ok && fs.existsSync(prWorkflow) && fs.existsSync(prRunner));
+  const mergeGuardReady = requiredCheckPresent || controlPlaneEligible;
+  const mergeGuardMode = requiredCheckPresent ? "github_required_checks"
+    : (controlPlaneEligible ? "control_plane_verified" : "unverified");
+  add(
+    "merge_guard",
+    mergeGuardReady,
+    requiredCheckPresent
+      ? "GitHub enforces CMDB PR Checks / verify"
+      : (controlPlaneEligible ? "Private repository: MCP verifies the exact head/check and requires human Gate B" : "No enforceable merge guard"),
+    isPrivate ? "Install the PR checks workflow and authenticate gh" : "Protect the default branch and require CMDB PR Checks / verify",
+  );
 
   const dockerfile = fs.existsSync(path.join(root, "Dockerfile"));
   const imageWorkflow = path.join(root, ".github", "workflows", "build-image.yml");
@@ -70,12 +84,14 @@ export function runPreflight(root) {
   const status = run("git", ["status", "--porcelain"], root);
   add("git_status", status.ok, status.output || "clean", "Resolve unreadable Git state");
 
-  const critical = ["git", "origin", "gh", "gh_auth", "github_repository", "pr_checks_workflow", "required_server_check", "image_delivery"];
+  const critical = ["git", "origin", "gh", "gh_auth", "github_repository", "pr_checks_workflow", "merge_guard", "image_delivery"];
   const failed = checks.filter((check) => critical.includes(check.name) && check.result === "FAIL");
   return {
     readiness: failed.length ? "NOT_READY" : (status.output ? "READY_WITH_WARNINGS" : "READY"),
     repository,
     default_branch: defaultBranch,
+    private_repository: isPrivate,
+    merge_guard_mode: mergeGuardMode,
     checks,
   };
 }

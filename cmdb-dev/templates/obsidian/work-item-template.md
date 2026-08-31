@@ -26,6 +26,10 @@ rework_count: 0
 rework_limit: 3
 test_result: unknown
 pr_checks: unknown
+pr_check_name:
+pr_check_run_url:
+pr_head_sha:
+merge_guard_mode: unverified # unverified|github_required_checks|control_plane_verified
 required_checks_enforced: false
 legacy_completion: false
 merge_status: none

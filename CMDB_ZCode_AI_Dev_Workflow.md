@@ -79,7 +79,8 @@ Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并
 /cmdb_merge_approve REQ-123
 ```
 
-Gate B 不能绕过 Required PR Checks。
+Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓库统一使用
+控制面校验，并且所有风险等级都必须经过 Gate B。
 
 ### Gate C：Tag / 镜像交付
 
@@ -110,8 +111,8 @@ stateDiagram-v2
   review --> pr_open: review_approved
   pr_open --> pr_checking: pr_created
   pr_checking --> doing: checks_failed
-  pr_checking --> merging: checks_passed low/medium
-  pr_checking --> waiting_human_merge: checks_passed high
+  pr_checking --> merging: GitHub enforced + low/medium
+  pr_checking --> waiting_human_merge: high or control-plane guard
   waiting_human_merge --> merging: approve_merge
   merging --> waiting_tag_confirm: pr_merged
   waiting_tag_confirm --> building: approve_tag
@@ -148,15 +149,24 @@ Primary Agent 在操作前调用 `cmdb_authorize`，令牌绑定 Work Item、状
 ## 7. PR 质量门
 
 PR Body 使用 `Refs #<issue>`，不得使用 `Closes` / `Fixes`，避免合并时过早
-关闭 Issue。低/中风险自动合并和高风险人工合并都必须满足：
+关闭 Issue。所有合并都必须满足：
 
-- 默认分支已启用保护；
-- `CMDB PR Checks / verify` 是服务端 Required Check；
-- 所有 Required Checks 均明确成功；
+- `CMDB PR Checks / verify` 明确成功；
 - Tester passed、Reviewer approved；
 - 没有合并阻塞项。
 
 缺失、pending、skipped、neutral、cancelled、timed out 或 failed 均不得合并。
+
+合并守卫有两种：
+
+1. `github_required_checks`：公开仓库或付费计划由 GitHub 服务端强制，
+   低/中风险可以自动合并；
+2. `control_plane_verified`：GitHub Free 私有仓库由
+   `cmdb_verify_pr_checks` 核对成功检查和精确 Head SHA，所有风险等级停在
+   Gate B，合并命令必须携带 `--match-head-commit <SHA>`。
+
+第二种模式保护通过插件执行的合并，但无法阻止管理员在 GitHub 页面手工
+绕过。需要服务端不可绕过保证时仍需 GitHub 付费分支保护。
 
 ## 8. 可验证镜像交付
 
@@ -191,6 +201,7 @@ Build Checker 必须独立核对：
 | `cmdb_status` / `cmdb_validate` | 刷新和验证状态 |
 | `cmdb_sync` / `cmdb_hydrate` | GitHub 与本地缓存同步 |
 | `cmdb_worktree_create` | 创建独立 worktree 并记录路径 |
+| `cmdb_verify_pr_checks` | 核对 PR Head/检查并选择 GitHub 或控制面守卫 |
 | `cmdb_authorize` | 发放一次性敏感操作令牌 |
 | `cmdb_verify_delivery` | 交叉核验完整供应链证据 |
 
@@ -214,7 +225,7 @@ MCP stdio server 同时支持当前 `2026-07-28` 发现协议和旧版初始化�
 ## 11. Definition of Done
 
 通用条件：Requirement approved、Coder completed、Tester passed、Reviewer
-approved、Required PR Checks passed、PR merged、Issue closed。
+approved、PR workflow checks passed、merge guard verified、PR merged、Issue closed。
 
 运行时交付还必须具备：人工 Gate C、严格 SemVer Tag、merged SHA 一致、GHCR
 Digest 一致、Release 元数据一致、SBOM verified、provenance verified。

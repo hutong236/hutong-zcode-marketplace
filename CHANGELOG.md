@@ -9,7 +9,9 @@ Versioning.
 
 ### Added
 
-- Bundled `cmdb-control` stdio MCP server with 11 typed workflow tools.
+- Bundled `cmdb-control` stdio MCP server with 12 typed workflow tools.
+- Private-repository merge guard that verifies the successful workflow and
+  exact PR head SHA without requiring paid GitHub branch protection.
 - Dual-era MCP support for the current 2026-07-28 protocol and legacy ZCode
   clients.
 - Session context injection, false-completion Stop guard, deterministic
@@ -26,6 +28,9 @@ Versioning.
 
 - MCP inputs are validated server-side and plugin subagents have no MCP control
   tools in their exhaustive tool lists.
+- Control-plane merges always require human Gate B and a merge command pinned
+  with `--match-head-commit`; public repositories still require GitHub-side
+  enforcement.
 
 ## [1.4.0] - 2026-08-31
 

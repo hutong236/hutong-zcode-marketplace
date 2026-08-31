@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { findControlRoot, findRepositoryRoot, getItem } from "./state-store.mjs";
+import { mergeGuardSatisfied } from "./state-machine.mjs";
 
 export const AUTHORIZATION_ACTIONS = Object.freeze([
   "git-push",
@@ -39,8 +40,8 @@ function assertActionState(item, action) {
   if (!REQUIRED_STATE[action].includes(item.status)) {
     throw new Error(`${action} is forbidden while ${item.id} is ${item.status}`);
   }
-  if (action === "pr-merge" && (item.pr_checks !== "passed" || item.required_checks_enforced !== true)) {
-    throw new Error("PR merge requires passed, enforced server-side checks");
+  if (action === "pr-merge" && (item.pr_checks !== "passed" || !mergeGuardSatisfied(item))) {
+    throw new Error("PR merge requires passed checks and a verified merge guard");
   }
   if (action === "pr-merge" && !Number.isInteger(item.pr_number)) throw new Error("PR merge requires a recorded pr_number");
   if (action === "git-tag" && item.tag_confirmation !== "approved") throw new Error("git tag requires Gate C approval");
@@ -79,6 +80,9 @@ function assertExecutionScope(root, item, action, cwd, command) {
   if (action === "pr-merge" && !commandHasNumber(String(command), item.pr_number)) {
     throw new Error(`PR merge command must name PR ${item.pr_number}`);
   }
+  if (action === "pr-merge" && !new RegExp(`--match-head-commit(?:=|\\s+)${item.pr_head_sha}(?:\\s|$)`).test(String(command))) {
+    throw new Error(`PR merge command must pin verified head SHA ${item.pr_head_sha}`);
+  }
   if (action === "issue-close" && !commandHasNumber(String(command), item.issue_number)) {
     throw new Error(`Issue close command must name Issue ${item.issue_number}`);
   }
@@ -104,6 +108,7 @@ export function issueAuthorization(root, { id, action, actor, ttlSeconds = 120 }
       branch: item.branch,
       worktree_path: item.worktree_path,
       pr_number: item.pr_number,
+      pr_head_sha: item.pr_head_sha,
       issue_number: item.issue_number,
       image_tag: item.image_tag,
       merged_sha: item.merged_sha,
