@@ -1,0 +1,20 @@
+{
+  "name": "cmdb-dev-marketplace",
+  "description": "Local ZCode marketplace for the CMDB AI development pipeline.",
+  "plugins": [
+    {
+      "name": "cmdb-dev",
+      "source": "./cmdb-dev",
+      "description": "CMDB Issue-to-code-to-test-to-PR-to-Docker-image AI workflow.",
+      "version": "1.0.1",
+      "category": "development",
+      "tags": [
+        "cmdb",
+        "github",
+        "docker",
+        "multi-agent"
+      ],
+      "strict": true
+    }
+  ]
+}

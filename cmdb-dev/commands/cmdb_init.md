@@ -1,0 +1,6 @@
+---
+description: Initialize local read-only Obsidian projection and GitHub Actions Docker image build workflow for a CMDB repository.
+argument-hint: "[optional setup notes]"
+skills: cmdb-development
+---
+Initialize the current CMDB repository without touching business code. First perform preflight. Create local directories if absent: `00_Dashboard/`, `01_Requirements/`, `02_Bugs/`, `.cmdb-dev/`. Create a read-only-intent Obsidian `00_Dashboard/研发控制台.md` for Waiting Approval/Developing/Testing/Review/Building/Blocked/Done and GitHub metadata. Create `.cmdb-dev/state.json`. Prefer excluding these local projections in `.git/info/exclude`, not shared `.gitignore`. Check `.github/workflows/build-image.yml`; if absent and a usable Dockerfile exists, create a `CMDB Build Image` workflow that runs on default branch push and v* tags, uses GHCR, permissions contents:read/packages:write, Buildx/login/metadata/build-push, and emits digest evidence. Reuse an equivalent existing workflow instead of duplicating. If no Dockerfile exists, do not invent it; report blocker. Do not create a development Issue. Return files changed, GitHub connectivity, workflow status, blockers, next command. Notes: $ARGUMENTS

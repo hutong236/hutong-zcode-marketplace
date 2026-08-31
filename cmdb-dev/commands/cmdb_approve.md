@@ -1,0 +1,6 @@
+---
+description: Approve a CMDB Work Item and run the automated pipeline through code, test, review, PR, merge, image verification, and Done.
+argument-hint: "<REQ-123 or BUG-123> [optional constraints]"
+skills: cmdb-development
+---
+The user explicitly approves: $ARGUMENTS. Act as Primary Agent Orchestrator. Resolve Work Item, query open GitHub Issue, reconcile remote/local state, confirm waiting approval, comment approval on Issue. Create/reuse correct branch from default branch. Dispatch Coder; then Tester; implementation failure returns to Coder and repeat. Tester pass -> Reviewer; changes_requested -> Coder -> Tester -> Reviewer. After approval Primary Agent inspects diff, commits only related code/test files, pushes, creates PR with `Refs #issue` (never Closes/Fixes), stores PR. Inspect PR checks; failures return to Coder with evidence. Low/medium risk merge automatically if repo rules allow; high risk stops at waiting_human_merge and asks for `/cmdb_merge_approve <ID>`. After merge set building, identify merged SHA and image-build run, dispatch Build Checker. Only if image push is proven record run/SHA/image/tags/digest, close Issue and mark done. Build failure keeps Issue open and sets blocked. Never ask for human confirmation merely because Coder finished; only scope change, unrecoverable blocker or high-risk merge.

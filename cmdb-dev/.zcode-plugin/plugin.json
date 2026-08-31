@@ -1,0 +1,17 @@
+{
+  "name": "cmdb-dev",
+  "version": "1.0.1",
+  "description": "CMDB AI dev workflow: Issue -> Branch -> Coder -> Tester -> Reviewer -> PR -> Actions -> Docker image.",
+  "author": {
+    "name": "CMDB Project"
+  },
+  "keywords": [
+    "cmdb",
+    "github",
+    "docker",
+    "multi-agent"
+  ],
+  "commands": "commands",
+  "skills": "skills",
+  "agents": "agents"
+}
