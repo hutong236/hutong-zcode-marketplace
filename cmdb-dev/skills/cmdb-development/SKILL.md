@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 1.1.0
+  version: 1.1.1
 ---
 
 # CMDB Development Skill
@@ -65,4 +65,6 @@ Use `git` for local code/branch/commit/push; `gh issue` for Issues; `gh pr` for 
 
 ## Obsidian
 
-Obsidian projections are read-only. ALL Obsidian projections MUST live under the target repository's `plan/` directory, never at the repository root: `plan/00_Dashboard/研发控制台.md`, `plan/01_Requirements/`, `plan/02_Bugs/`. Machine state stays at `.cmdb-dev/state.json`. `plan/` may already contain human-maintained planning documents — never modify or delete them; the plugin only manages its own subdirectories and files under `plan/`. Prefer keeping projections out of product-code commits by excluding `plan/` and `.cmdb-dev/` in `.git/info/exclude`, not shared `.gitignore` (already-tracked files in `plan/` are unaffected by this exclude).
+Obsidian projections are read-only. ALL Obsidian projections MUST live under the target repository's `plan/` directory, never at the repository root: `plan/00_Dashboard/` (`首页.md` entry page, `研发控制台.md`, `研发看板.md`, `需求列表.md` — all pure Dataview views over frontmatter, never hand-written state), `plan/01_Requirements/`, `plan/02_Bugs/`. Machine state stays at `.cmdb-dev/state.json`. `plan/` may already contain human-maintained planning documents — never modify or delete them; the plugin only manages its own subdirectories and files under `plan/`. Prefer keeping projections out of product-code commits by excluding `plan/` and `.cmdb-dev/` in `.git/info/exclude`, not shared `.gitignore` (already-tracked files in `plan/` are unaffected by this exclude).
+
+Work item notes follow `templates/obsidian/work-item-template.md`: H1 is `<ID> <中文标题>`; fixed Chinese H2 skeleton 背景/目标/功能范围/非范围/验收标准/Planner 摘要/GitHub/关联/Agent 执行记录; acceptance criteria are checkboxes and may only be checked with code, test, or Actions evidence; relations use `[[wikilinks]]` to other work items; no tags — classification comes from the `type` field plus directory. File names stay stable (`REQ-<issue-number>.md`, `BUG-<issue-number>.md`). Frontmatter is the single record: keep every field current, refresh `updated` on each sync, and query it in views instead of duplicating status in page text.

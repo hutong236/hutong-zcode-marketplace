@@ -270,6 +270,21 @@ GitHub实际状态 > Git状态 > 本地Markdown > AI推断
 
 Obsidian 只显示 ZCode 自动生成/同步的 Markdown，不人工修改研发状态。
 
+投影目录（全部位于目标仓库 `plan/` 下，只读）：
+
+```text
+plan/
+├── 00_Dashboard/          # 纯 Dataview 视图页，零手写状态
+│   ├── 首页.md            # 人工入口，大链接直达研发控制台
+│   ├── 研发控制台.md       # Waiting Approval / Active / Blocked / Open Bugs / Done
+│   ├── 研发看板.md         # dataviewjs 按状态机分列的看板
+│   └── 需求列表.md         # 全量工单表格
+├── 01_Requirements/       # 需求工单，一文件一需求（REQ-<Issue号>.md）
+└── 02_Bugs/               # Bug 工单（BUG-<Issue号>.md）
+```
+
+工单笔记规范：H1 = `<ID> <中文标题>`；正文固定中文骨架 背景/目标/功能范围/非范围/验收标准/Planner 摘要/GitHub/关联/Agent 执行记录；验收标准用 checkbox，必须有代码、测试或 Actions 证据才可打勾；关联一律用 `[[wikilink]]`；不使用标签，分类靠 frontmatter `type` + 目录。frontmatter 是唯一记录，每次同步刷新 `updated`。
+
 建议字段：
 
 ```yaml

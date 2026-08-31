@@ -6,9 +6,9 @@ CMDB AI 研发流水线的 ZCode 私人插件市场。仓库根目录即市场�
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `cmdb-dev` | 1.0.1 | CMDB Issue → Branch → Coder → Tester → Reviewer → PR → Actions → Docker image 全流程 AI 工作流 |
+| `cmdb-dev` | 1.0.3 | CMDB Issue → Branch → Coder → Tester → Reviewer → PR → Actions → Docker image 全流程 AI 工作流 |
 
-组件：7 个 `/cmdb_*` 命令、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、1 个 Skill、Obsidian 研发控制台模板与 GitHub Actions 构建模板。
+组件：7 个 `/cmdb_*` 命令、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、1 个 Skill、Obsidian 投影模板（首页 / 研发控制台 / 研发看板 / 需求列表 / 工单）与 GitHub Actions 构建模板。
 
 ## 在 ZCode 中添加
 
