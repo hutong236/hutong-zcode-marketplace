@@ -19,7 +19,7 @@ reviewer_result: pending
 test_result: unknown
 pr_checks: unknown
 merge_status: none
-build_status: unknown
+build_status: unknown # unknown|running|passed|failed|skipped(人工确认不打 tag 时为 skipped)
 image:
 image_tag:
 image_digest:

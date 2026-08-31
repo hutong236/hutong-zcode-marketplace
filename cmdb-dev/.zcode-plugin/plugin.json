@@ -1,6 +1,6 @@
 {
   "name": "cmdb-dev",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CMDB AI dev workflow: Issue -> Branch -> Coder -> Tester -> Reviewer -> PR -> Actions -> Docker image.",
   "author": {
     "name": "CMDB Project"

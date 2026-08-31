@@ -1,9 +1,9 @@
 # CMDB 项目：ZCode AI 研发流水线规范
 
-**版本：** V1.0  
+**版本：** V1.1  
 **日期：** 2026-08-31  
 **适用范围：** CMDB 项目研发  
-**研发完成定义：** GitHub Actions 成功构建并推送 Docker 镜像后，任务才算 `Done`。
+**研发完成定义：** 人工确认打 Tag 后，GitHub Actions 成功构建并推送 Docker 镜像，任务才算 `Done`；人工确认本次无需镜像（skip）时，PR 合并并关 Issue 即 `Done`。
 
 ## 1. 最终架构
 
@@ -30,6 +30,8 @@ PR Checks（如仓库已有）
  ↓
 Merge
  ↓
+Tag 确认（人工 Gate C：/cmdb_tag_approve）──skip──> Close Issue → Done（无镜像）
+ ↓ 打 tag
 GitHub Actions
  ↓
 Docker Build + Push
@@ -49,7 +51,7 @@ Obsidian 只读研发控制台
 
 | 对象 | 职责 |
 |---|---|
-| 用户 | 提需求、批准需求、处理 Blocked、高风险 Merge |
+| 用户 | 提需求、批准需求、处理 Blocked、高风险 Merge、确认是否打 Tag（镜像交付） |
 | ZCode Primary Agent | 唯一流程 Orchestrator |
 | Planner Subagent | 需求分析、影响范围、测试策略、风险 |
 | Coder Subagent | 在本地 Git Branch 修改代码 |
@@ -87,10 +89,11 @@ PR 是“代码已经做成什么”。
 
 ```text
 PR Merge ≠ Done
-Docker Image Build + Push Success = Done
+人工确认打 Tag + Docker Image Build + Push Success = Done
+人工确认 skip = Done（无镜像）
 ```
 
-镜像成功前 GitHub Issue 保持 Open。
+镜像成功前 GitHub Issue 保持 Open。不是每次调整都打 tag：文档、纯配置等不需要镜像的改动，人工确认 skip 后直接完成。
 
 ## 4. 人工 Gate
 
@@ -123,6 +126,17 @@ Docker Image Build + Push Success = Done
 /cmdb_merge_approve REQ-123
 ```
 
+### Gate C：Tag/镜像确认（必须）
+
+Merge 后流程停在 `waiting_tag_confirm`，由人工确认本次是否交付镜像：
+
+```text
+/cmdb_tag_approve REQ-123 v1.2.4   # 打 tag（不写版本号时自动取最新 v* tag 递增 patch）→ 触发镜像构建
+/cmdb_tag_approve REQ-123 skip     # 不打 tag，跳过镜像直接关 Issue 完成
+```
+
+未经确认，插件不会创建或推送任何 git tag。
+
 ### Coder 完成后不需要人工确认
 
 正常自动闭环：
@@ -133,7 +147,7 @@ Coder → Tester → Reviewer
 
 Tester Failed 自动退回 Coder；Reviewer Changes Requested 自动退回 Coder，再重新 Tester/Reviewer。
 
-只有需求范围改变、不可恢复 Blocked、高风险 Merge 才找人工。
+只有需求范围改变、不可恢复 Blocked、高风险 Merge、Tag/镜像确认才找人工。
 
 ## 5. 为什么 Orchestrator 必须是 Primary Agent
 
@@ -249,6 +263,7 @@ waiting_approval
  → doing
  → testing
  → review
+ → waiting_tag_confirm
  → building
  → done
 ```
@@ -259,6 +274,8 @@ waiting_approval
 blocked
 waiting_human_merge
 ```
+
+skip 旁路：`waiting_tag_confirm` ──人工确认 skip──> `done`（`build_status: skipped`）。
 
 ## 10. GitHub 是事实源，Obsidian 是投影视图
 
@@ -328,6 +345,7 @@ Tester/Reviewer 的 Bash 仅用于测试和安全的 Git/文件检查，Prompt �
 /cmdb_dev <自然语言需求或Bug>
 /cmdb_approve <REQ-xxx/BUG-xxx>
 /cmdb_merge_approve <REQ-xxx/BUG-xxx>
+/cmdb_tag_approve <REQ-xxx/BUG-xxx> [vX.Y.Z|skip]
 /cmdb_status [REQ-xxx/BUG-xxx]
 /cmdb_resume <REQ-xxx/BUG-xxx>
 ```
@@ -342,10 +360,13 @@ Tester/Reviewer 的 Bash 仅用于测试和安全的 Git/文件检查，Prompt �
 Planner 分析 → 创建 Issue → 生成 REQ/BUG → Waiting Approval。**不写代码。**
 
 ### `/cmdb_approve`
-人工批准后自动跑：Branch → Coder → Tester ↔ Coder → Reviewer ↔ Coder → PR → Merge（低/中风险）→ Build Image → Done。
+人工批准后自动跑：Branch → Coder → Tester ↔ Coder → Reviewer ↔ Coder → PR → Merge（低/中风险）→ Tag 确认 →（打 tag：Build Image | skip：直接 Done）。
 
 ### `/cmdb_merge_approve`
 高风险 PR 的人工 Merge Gate。
+
+### `/cmdb_tag_approve`
+Merge 后的 Tag/镜像人工确认 Gate：打 tag（触发镜像构建，Build Checker 取证后 Done）或 skip（跳过镜像直接 Done）。
 
 ### `/cmdb_status`
 只读同步 GitHub/Git 状态并展示研发控制台。
@@ -364,9 +385,9 @@ Planner 分析 → 创建 Issue → 生成 REQ/BUG → Waiting Approval。**不�
 - PR Created ✅
 - PR Checks Passed（如存在）✅
 - PR Merged ✅
-- Docker Image Built ✅
-- Docker Image Pushed ✅
-- Image Digest Known ✅
+- Tag/镜像人工确认 ✅（打 tag 或 skip 二选一）
+- 打 tag 路径：Docker Image Built / Pushed / Digest Known ✅
+- skip 路径：build_status = skipped ✅
 - GitHub Issue Closed ✅
 
 ## 14. 项目边界
@@ -374,7 +395,7 @@ Planner 分析 → 创建 Issue → 生成 REQ/BUG → Waiting Approval。**不�
 本流程负责：
 
 ```text
-需求 → Issue → Branch → Code → Test → Review → PR → Merge → Actions → Docker Image
+需求 → Issue → Branch → Code → Test → Review → PR → Merge → Tag确认 → Actions → Docker Image
 ```
 
 不负责：

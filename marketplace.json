@@ -6,7 +6,7 @@
       "name": "cmdb-dev",
       "source": "./cmdb-dev",
       "description": "CMDB Issue-to-code-to-test-to-PR-to-Docker-image AI workflow.",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "category": "development",
       "tags": [
         "cmdb",

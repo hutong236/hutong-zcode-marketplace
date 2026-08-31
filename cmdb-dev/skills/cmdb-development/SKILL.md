@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 1.1.1
+  version: 1.2.0
 ---
 
 # CMDB Development Skill
@@ -15,8 +15,9 @@ The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `
 
 1. New work always stops for requirement approval before business code changes.
 2. High-risk PR merge requires explicit human approval.
-3. Scope changes and irrecoverable blockers require human input.
-4. No human confirmation is required between Coder -> Tester -> Reviewer.
+3. Tag/image delivery after merge requires explicit human confirmation (`waiting_tag_confirm` + `/cmdb_tag_approve`); never create or push a git tag without it — not every change ships an image.
+4. Scope changes and irrecoverable blockers require human input.
+5. No human confirmation is required between Coder -> Tester -> Reviewer.
 
 ## Truth precedence
 
@@ -51,13 +52,14 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 10. Create PR with `gh pr create`; body uses `Refs #<issue>`, never `Closes`/`Fixes`.
 11. Read PR checks. Failed checks return to Coder with evidence.
 12. Low/medium risk: merge automatically when repo rules allow. High risk: stop at `waiting_human_merge`.
-13. After merge, find merged SHA and image-build Actions run.
-14. Dispatch Build Checker.
+13. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or skip. If the repository has no image-build workflow, go straight to the skip path.
+14. Tag confirmed via `/cmdb_tag_approve <ID> [vX.Y.Z]`: create an annotated tag on the merged SHA (name from the user, else next patch of the latest `v*` tag — state it), push the tag, wait for the tag-triggered image build, dispatch Build Checker.
 15. Only when image build AND push are proven: record image/tag/digest/SHA/run URL, close Issue, mark Done.
+16. Skip confirmed via `/cmdb_tag_approve <ID> skip`: set `build_status: skipped`, close Issue, mark Done without image evidence.
 
 ## Done definition
 
-Done requires approval, coder completed, tester passed, reviewer approved, PR merged, Docker image built and pushed, digest known, and Issue closed.
+Done requires approval, coder completed, tester passed, reviewer approved, PR merged, Issue closed, and exactly one of: a human-confirmed tag whose image build and push are proven with digest known, or a human-confirmed skip with `build_status: skipped`.
 
 ## GitHub communication
 
