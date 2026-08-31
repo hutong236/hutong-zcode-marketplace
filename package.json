@@ -1,0 +1,14 @@
+{
+  "name": "hutong-zcode-marketplace",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "validate": "node scripts/validate-marketplace.mjs",
+    "test": "node --test"
+  }
+}

@@ -3,22 +3,66 @@ name: CMDB Build Image
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: cmdb-image-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  validate-release:
+    name: validate-release
     runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.release.outputs.image_name }}
+      tag_sha: ${{ steps.release.outputs.tag_sha }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - name: Checkout
+      - name: Checkout full history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate SemVer tag and default-branch ancestry
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Tag must be strict SemVer with a v prefix, for example v1.4.0 or v2.0.0-rc.1" >&2
+            exit 2
+          fi
+          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
+          git fetch --no-tags origin "${default_branch}"
+          tag_sha="$(git rev-list -n 1 "${GITHUB_REF_NAME}")"
+          if ! git merge-base --is-ancestor "${tag_sha}" "origin/${default_branch}"; then
+            echo "Tag commit ${tag_sha} is not contained in origin/${default_branch}" >&2
+            exit 3
+          fi
+          image_name="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_name=${image_name}" >> "${GITHUB_OUTPUT}"
+          echo "tag_sha=${tag_sha}" >> "${GITHUB_OUTPUT}"
+          echo "version=${GITHUB_REF_NAME#v}" >> "${GITHUB_OUTPUT}"
+
+  build-and-push:
+    name: build-and-push
+    needs: validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-release.outputs.tag_sha }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
@@ -31,14 +75,13 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ needs.validate-release.outputs.image_name }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-      - name: Build and push
+            type=raw,value=${{ github.ref_name }}
+            type=semver,pattern={{version}},value=${{ github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }}
+            type=sha,prefix=sha-
+      - name: Build, attest, and push
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -46,8 +89,42 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-      - name: Delivery metadata
+          sbom: true
+          provenance: mode=max
+      - name: Write delivery metadata
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ needs.validate-release.outputs.image_name }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_SHA: ${{ needs.validate-release.outputs.tag_sha }}
+        shell: bash
         run: |
-          echo "commit_sha=${GITHUB_SHA}"
-          echo "image=${REGISTRY}/${IMAGE_NAME}"
-          echo "digest=${{ steps.build.outputs.digest }}"
+          set -euo pipefail
+          jq -n \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg tag "${GITHUB_REF_NAME}" \
+            --arg commit_sha "${TAG_SHA}" \
+            --arg image "${IMAGE}" \
+            --arg image_digest "${IMAGE_DIGEST}" \
+            --arg workflow_run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg image_tags "${IMAGE_TAGS}" \
+            '{schema_version:1, repository:$repository, tag:$tag, commit_sha:$commit_sha, image:$image, image_tags:($image_tags | split("\n") | map(select(length > 0))), image_digest:$image_digest, workflow_run_url:$workflow_run_url, sbom:"generated", provenance:"generated"}' \
+            > delivery-metadata.json
+          jq -e '.image_digest | test("^sha256:[0-9a-f]{64}$")' delivery-metadata.json >/dev/null
+      - name: Upload delivery metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmdb-delivery-${{ github.ref_name }}
+          path: delivery-metadata.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes --title "${GITHUB_REF_NAME}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" delivery-metadata.json --clobber

@@ -1,14 +1,20 @@
 ---
 id:
+state_revision:
 title:
 type:
 status: waiting_approval
 risk_level:
+delivery_required: true
+delivery_reason:
+skip_allowed: false
 human_approval: required
 owner:
 github_issue:
+github_state_comment:
 github_pr:
 branch:
+worktree_path:
 created:
 updated:
 agent_owner: orchestrator
@@ -16,15 +22,30 @@ agent_status:
 coder_result: pending
 tester_result: pending
 reviewer_result: pending
+rework_count: 0
+rework_limit: 3
 test_result: unknown
 pr_checks: unknown
+pr_check_name:
+pr_check_run_url:
+pr_head_sha:
+merge_guard_mode: unverified # unverified|github_required_checks|control_plane_verified
+required_checks_enforced: false
+legacy_completion: false
 merge_status: none
 build_status: unknown # unknown|running|passed|failed|skipped(人工确认不打 tag 时为 skipped)
+tag_confirmation: pending
 image:
 image_tag:
 image_digest:
 commit_sha:
 workflow_run_url:
+registry_verified: false
+release_url:
+sbom_status: unknown
+sbom_digest:
+provenance_status: unknown
+provenance_digest:
 blocked: false
 block_reason:
 next_action: human_approval

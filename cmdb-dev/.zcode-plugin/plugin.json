@@ -1,10 +1,14 @@
 {
   "name": "cmdb-dev",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "CMDB AI dev workflow: Issue -> Branch -> Coder -> Tester -> Reviewer -> PR -> Actions -> Docker image.",
   "author": {
-    "name": "CMDB Project"
+    "name": "hutong236",
+    "url": "https://github.com/hutong236"
   },
+  "homepage": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "repository": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "license": "MIT",
   "keywords": [
     "cmdb",
     "github",
@@ -13,5 +17,6 @@
   ],
   "commands": "commands",
   "skills": "skills",
-  "agents": "agents"
+  "agents": "agents",
+  "mcpServers": ".mcp.json"
 }
