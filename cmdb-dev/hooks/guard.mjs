@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { consumeAuthorization } from "../scripts/lib/authorization.mjs";
@@ -20,6 +21,56 @@ function isReadOnlyGitTag(segment) {
   const after = normalized.replace(/^.*?\bgit\b[^\n;&|]*?\btag\b/, "").trim();
   if (!after) return true;
   return /^(?:-l|--list|--contains|--points-at|--merged|--no-merged|--sort(?:=|\s))\b/.test(after);
+}
+
+// git push 命令中显式给出的远端参数（过滤选项与环境变量赋值，取第一个位置参数）；
+// 裸 `git push` 返回空
+function pushRemoteTargets(segment) {
+  const match = segment.match(/\bgit\b[^\n;&|]*?\bpush\b\s+(.+)$/);
+  if (!match) return [];
+  const args = match[1]
+    .trim()
+    .split(/\s+/)
+    .filter((arg) => !arg.startsWith("-") && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg));
+  return args.length > 0 ? [args[0]] : [];
+}
+
+// 统一远端写法便于比对：剥协议、user@ 与 .git 后缀（github.com/owner/repo）
+function normalizeRemoteTarget(target) {
+  return target
+    .replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "")
+    .replace(/^[^@/]+@/, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+}
+
+// 白名单来自控制根 .cmdb-dev/guard-allowlist.json（字符串数组，子串匹配归一化远端）
+function readPushAllowlist(root) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, ".cmdb-dev", "guard-allowlist.json"), "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushTargetsExempt(root, command) {
+  const allowlist = readPushAllowlist(root);
+  if (allowlist.length === 0) return { exempt: false };
+  const segments = shellSegments(command).filter((segment) => containsGitSubcommand(segment, "push"));
+  if (segments.length === 0) return { exempt: false };
+  const targets = [];
+  for (const segment of segments) {
+    const remotes = pushRemoteTargets(segment);
+    // 裸 `git push`（推 origin）不受白名单保护，必须走令牌
+    if (remotes.length === 0) return { exempt: false };
+    targets.push(...remotes);
+  }
+  const unmatched = targets.filter((target) => {
+    const normalized = normalizeRemoteTarget(target);
+    return !allowlist.some((entry) => normalized.includes(entry.toLowerCase()));
+  });
+  return unmatched.length === 0 ? { exempt: true, targets } : { exempt: false };
 }
 
 export function analyzeCommand(command) {
@@ -55,6 +106,14 @@ export function evaluateCommand({ cwd, command, token }) {
   }
   if (!fs.existsSync(storePath(root))) return { allowed: true, reason: "Repository is not managed by cmdb-dev" };
   if (actions.length > 1) return { allowed: false, reason: "Run exactly one protected operation per Bash call" };
+  if (actions[0] === "git-push") {
+    // 白名单内的显式远端（如插件市场仓库）不受令牌门禁；必须在 cd/-C 检查前判断，
+    // 跨仓推送天然需要切换工作目录
+    const exemption = pushTargetsExempt(root, command);
+    if (exemption.exempt) {
+      return { allowed: true, reason: `Allowed push to exempt remote: ${exemption.targets.join(", ")}` };
+    }
+  }
   if (/(?:^|[;&|]\s*)cd\s+|\bgit\s+(?:--git-dir|--work-tree|-C)\b/.test(String(command))) {
     return { allowed: false, reason: "Set the Bash tool working directory directly; protected calls may not change or override repository paths" };
   }
