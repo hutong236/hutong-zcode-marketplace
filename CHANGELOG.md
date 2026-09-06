@@ -5,6 +5,18 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-06
+
+### Fixed
+
+- PreToolUse guard no longer mistakes `push`/`tag` words inside `git commit`
+  message bodies for protected operations: `-m`/`-am`/`--message` message
+  arguments are stripped before segmented scanning. Message bodies containing
+  command substitution stay visible to the guard (fail closed), except for the
+  pure-data `$(cat <<EOF ...)` form. The push allowlist and the cd/-C check now
+  operate on the stripped text as well, so message content can neither feed the
+  allowlist nor trip the one-operation-per-call rule.
+
 ## [2.0.0] - 2026-08-31
 
 ### Added

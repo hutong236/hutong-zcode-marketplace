@@ -66,3 +66,48 @@ test("allowlist never exempts git tag or merge operations", () => {
   assert.equal(tagResult.allowed, false);
   assert.match(tagResult.reason, /git-tag requires a single-use CMDB authorization token/);
 });
+
+test("ascii push/tag words inside a quoted commit message are not protected operations", () => {
+  const root = managedRepository();
+  const command = 'git commit -m "feat(guard): push allowlist exemption for tag workflows"';
+  const result = evaluateCommand({ cwd: root, command });
+  assert.equal(result.allowed, true);
+  assert.equal(result.reason, "No protected operation");
+});
+
+test("unquoted hyphenated commit message tokens are not mistaken for git subcommands", () => {
+  const root = managedRepository();
+  const result = evaluateCommand({ cwd: root, command: "git commit -m fix-push-tag-regression" });
+  assert.equal(result.allowed, true);
+  assert.equal(result.reason, "No protected operation");
+});
+
+test("heredoc style commit messages are scanned without the message body", () => {
+  const root = managedRepository();
+  const command = 'git commit -m "$(cat <<\'EOF\'\nfeat: push allowlist\nsupport tag workflows\nEOF\n)"';
+  const result = evaluateCommand({ cwd: root, command });
+  assert.equal(result.allowed, true);
+  assert.equal(result.reason, "No protected operation");
+});
+
+test("a commit message cannot feed the push allowlist for a following bare push", () => {
+  const root = managedRepository({ allowlist: ["hutong236/hutong-zcode-marketplace"] });
+  const command = `git commit -m "git push ${EXEMPT_REMOTE} main" && git push`;
+  const result = evaluateCommand({ cwd: root, command });
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+});
+
+test("command substitution inside a commit message stays visible to the guard", () => {
+  const root = managedRepository();
+  const result = evaluateCommand({ cwd: root, command: 'git commit -m "$(git push origin main)"' });
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+});
+
+test("tag message bodies no longer trip the one-action rule", () => {
+  const root = managedRepository();
+  const result = evaluateCommand({ cwd: root, command: 'git tag -a v1.0.0 -m "match upstream push"' });
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /git-tag requires a single-use CMDB authorization token/);
+});

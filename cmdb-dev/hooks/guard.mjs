@@ -11,6 +11,21 @@ function shellSegments(command) {
   return String(command ?? "").split(/(?:\r?\n|&&|\|\||;)/).map((value) => value.trim()).filter(Boolean);
 }
 
+// git 命令的 -m/-am/--message 消息体是数据不是命令：提交信息里的 "push"/"tag" 字样
+// 会与同段的 git 误判成受控操作，分段扫描前先剥离。含命令替换（$(、反引号）的消息体
+// 保留扫描（fail closed），仅整体为 $(cat <<EOF ...) 纯数据形式时剥离。
+function stripMessageBodies(command) {
+  return String(command ?? "").replace(
+    /(^|\s)(?:-am|-m|--message)(?:\s*=|\s+)(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)'|(\S+))/g,
+    (match, prefix, doubleQuoted, singleQuoted, token) => {
+      if (token && /^-/.test(token)) return match;
+      const body = doubleQuoted ?? singleQuoted ?? token ?? "";
+      if (/[$`]/.test(body) && !/^\$\(\s*cat\s+<<-?'?\w+'?[\s\S]*\)\s*$/.test(body)) return match;
+      return prefix;
+    },
+  );
+}
+
 function containsGitSubcommand(segment, subcommand) {
   return new RegExp(`\\bgit\\b[^\\n;&|]*\\b${subcommand}\\b`).test(segment);
 }
@@ -57,7 +72,7 @@ function readPushAllowlist(root) {
 function pushTargetsExempt(root, command) {
   const allowlist = readPushAllowlist(root);
   if (allowlist.length === 0) return { exempt: false };
-  const segments = shellSegments(command).filter((segment) => containsGitSubcommand(segment, "push"));
+  const segments = shellSegments(stripMessageBodies(command)).filter((segment) => containsGitSubcommand(segment, "push"));
   if (segments.length === 0) return { exempt: false };
   const targets = [];
   for (const segment of segments) {
@@ -75,7 +90,7 @@ function pushTargetsExempt(root, command) {
 
 export function analyzeCommand(command) {
   const actions = [];
-  for (const segment of shellSegments(command)) {
+  for (const segment of shellSegments(stripMessageBodies(command))) {
     if (/\bgh\s+pr\s+merge\b/.test(segment)) actions.push("pr-merge");
     if (/\bgh\s+issue\s+close\b/.test(segment)) actions.push("issue-close");
     if (containsGitSubcommand(segment, "push")) actions.push("git-push");
@@ -114,7 +129,7 @@ export function evaluateCommand({ cwd, command, token }) {
       return { allowed: true, reason: `Allowed push to exempt remote: ${exemption.targets.join(", ")}` };
     }
   }
-  if (/(?:^|[;&|]\s*)cd\s+|\bgit\s+(?:--git-dir|--work-tree|-C)\b/.test(String(command))) {
+  if (/(?:^|[;&|]\s*)cd\s+|\bgit\s+(?:--git-dir|--work-tree|-C)\b/.test(stripMessageBodies(command))) {
     return { allowed: false, reason: "Set the Bash tool working directory directly; protected calls may not change or override repository paths" };
   }
   if (!token) return { allowed: false, reason: `${actions[0]} requires a single-use CMDB authorization token` };
