@@ -141,7 +141,7 @@ function liveFacts(root, item, repository) {
       facts.pr = { error: error.message };
     }
   }
-  if (item.image_tag) {
+  if (["building", "waiting_close", "done"].includes(item.status) && item.image_tag) {
     try {
       facts.image_runs = JSON.parse(runGh([
         "run", "list", "--repo", repository, "--workflow", "CMDB Build Image", "--branch", item.image_tag,

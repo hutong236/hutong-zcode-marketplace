@@ -5,6 +5,32 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-07
+
+### Changed
+
+- Execution-time optimizations across the delivery pipeline. The tag-triggered
+  image workflow is a single job with Docker layer caching (registry-backed
+  `buildcache` ref on GHCR); PR checks gain npm/Go/pip caches, Buildx, and a
+  GHA-cached Docker build. Neither template changes its gate semantics.
+- `syncItemToGitHub` drops from five serial `gh` calls per transition to a
+  steady-state two (label edit + comment PATCH) using a non-canonical
+  `.cmdb-dev/github-meta.json` accelerator that caches the managed comment id
+  and last-synced label; first sync, meta loss, or a 404 fall back to the
+  conservative full path, which keeps the remote-revision guard and now lists
+  only the first comment page before paginating.
+- Slash gate commands (`/cmdb_approve`, `/cmdb_merge_approve`,
+  `/cmdb_tag_approve`) refresh from GitHub only when resuming or in doubt; a
+  transition performed in the same session is already revision-guarded.
+  `/cmdb_init` no longer runs a second preflight.
+- Tester and Reviewer are dispatched in parallel after the Coder completes
+  (Reviewer is read-only, so the single-writer rule holds); the state machine
+  is unchanged and `review_approved` still requires passed tests.
+- Build Checker waits for the image build with one blocking
+  `gh run watch --exit-status` call instead of repeated polling turns.
+- `cmdb_status` live facts query image runs only for
+  building/waiting_close/done.
+
 ## [2.0.1] - 2026-09-06
 
 ### Fixed

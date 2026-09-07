@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 2.0.0
+  version: 2.1.0
 ---
 
 # CMDB Development Skill
@@ -17,7 +17,7 @@ The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `
 2. High-risk PR merge requires explicit human approval.
 3. Tag/image delivery after merge requires explicit human confirmation (`waiting_tag_confirm` + `/cmdb_tag_approve`); never create or push a git tag without it — not every change ships an image.
 4. Scope changes and irrecoverable blockers require human input.
-5. No human confirmation is required between Coder -> Tester -> Reviewer.
+5. No human confirmation is required between Coder -> Tester/Reviewer; Tester and Reviewer are dispatched in parallel.
 
 ## Truth precedence
 
@@ -57,19 +57,17 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 2. Comment approval on the Issue.
 3. Create/reuse the Work Item's isolated worktree and branch from the current default branch.
 4. Dispatch Coder with the recorded worktree path.
-5. Coder complete -> Tester.
-6. Tester failure caused by implementation -> Coder -> Tester again.
-7. Tester passed -> Reviewer.
-8. Reviewer changes_requested -> Coder -> Tester -> Reviewer.
-9. Reviewer approved -> Primary Agent commits only related changes, calls `cmdb_authorize(git-push)`, and performs one authorized push.
-10. Create PR with `gh pr create`; body uses `Refs #<issue>`, never `Closes`/`Fixes`.
-11. Call `cmdb_verify_pr_checks`. It verifies the exact PR Head SHA and successful `CMDB PR Checks / verify`. Public repositories require GitHub-side enforcement. A private repository without paid branch protection records `control_plane_verified` instead; missing or non-successful checks always block.
-12. GitHub-enforced low/medium risk may perform one authorized merge. High risk and every control-plane-guarded private-repository merge stop at `waiting_human_merge`. After Gate B, the merge command must include `--match-head-commit <persisted-pr-head-sha>`; human approval never bypasses checks.
-13. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or, only when the persisted delivery policy allows it, skip. A missing image workflow never authorizes an automatic skip.
-14. Tag confirmed via `/cmdb_tag_approve <ID> [vX.Y.Z]`: create an annotated tag on the merged SHA (name from the user, else next patch of the latest `v*` tag — state it), push the tag, wait for the tag-triggered image build, dispatch Build Checker.
-15. Build Checker downloads both the Actions artifact and GitHub Release `delivery-metadata.json`, independently queries the matching GHCR version/remote manifest, verifies SBOM and provenance attestations, and compares tag commit to merged SHA. Logs alone never prove delivery. Primary Agent calls `cmdb_verify_delivery` with both metadata objects and the registry digest.
-16. Only when all evidence agrees: record image/tag/digest/SHA/run URL/Release URL and verified registry/SBOM/provenance status, close Issue, mark Done.
-17. Skip confirmed via `/cmdb_tag_approve <ID> skip`: allow only when `delivery_required: false` and `skip_allowed: true`; record the human confirmation and reason, set `build_status: skipped`, close Issue, mark Done without image evidence.
+5. Coder complete -> dispatch cmdb-tester and cmdb-reviewer in the same round. Reviewer is read-only, so parallel dispatch never violates the single-writer rule.
+6. Tester failure caused by implementation or Reviewer changes_requested -> Coder, then re-dispatch both in parallel; the stale sibling result is discarded.
+7. Only when Tester passed AND Reviewer approved -> Primary Agent commits only related changes, calls `cmdb_authorize(git-push)`, and performs one authorized push.
+8. Create PR with `gh pr create`; body uses `Refs #<issue>`, never `Closes`/`Fixes`.
+9. Call `cmdb_verify_pr_checks`. It verifies the exact PR Head SHA and successful `CMDB PR Checks / verify`. Public repositories require GitHub-side enforcement. A private repository without paid branch protection records `control_plane_verified` instead; missing or non-successful checks always block.
+10. GitHub-enforced low/medium risk may perform one authorized merge. High risk and every control-plane-guarded private-repository merge stop at `waiting_human_merge`. After Gate B, the merge command must include `--match-head-commit <persisted-pr-head-sha>`; human approval never bypasses checks.
+11. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or, only when the persisted delivery policy allows it, skip. A missing image workflow never authorizes an automatic skip.
+12. Tag confirmed via `/cmdb_tag_approve <ID> [vX.Y.Z]`: create an annotated tag on the merged SHA (name from the user, else next patch of the latest `v*` tag — state it), push the tag, wait for the tag-triggered image build with one blocking `gh run watch <run-id> --exit-status --interval 30` Bash call instead of repeated polling, dispatch Build Checker.
+13. Build Checker downloads both the Actions artifact and GitHub Release `delivery-metadata.json`, independently queries the matching GHCR version/remote manifest, verifies SBOM and provenance attestations, and compares tag commit to merged SHA. Logs alone never prove delivery. Primary Agent calls `cmdb_verify_delivery` with both metadata objects and the registry digest.
+14. Only when all evidence agrees: record image/tag/digest/SHA/run URL/Release URL and verified registry/SBOM/provenance status, close Issue, mark Done.
+15. Skip confirmed via `/cmdb_tag_approve <ID> skip`: allow only when `delivery_required: false` and `skip_allowed: true`; record the human confirmation and reason, set `build_status: skipped`, close Issue, mark Done without image evidence.
 
 ## Done definition
 

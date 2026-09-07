@@ -94,7 +94,7 @@ Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓
 `skip` 仅适用于 Planner 已持久化
 `delivery_required: false` 且 `skip_allowed: true` 的非运行时改动。
 
-Coder → Tester → Reviewer 之间没有额外人工 Gate。
+Coder → Tester/Reviewer 之间没有额外人工 Gate;Coder 完成后同一轮并行派发 Tester 与 Reviewer(Reviewer 只读,不违反单 worktree 单写者),两侧结果齐备才推进,任一失败按返工环回到 Coder 并重新并行派发。
 
 ## 5. 状态机
 

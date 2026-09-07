@@ -47,7 +47,15 @@ if [[ -f pyproject.toml || -f pytest.ini || -d tests ]]; then
 fi
 
 if [[ -f Dockerfile ]]; then
-  docker build --tag "cmdb-pr-check:${GITHUB_SHA:-local}" .
+  if [[ -n "${GITHUB_ACTIONS:-}" ]] && docker buildx version >/dev/null 2>&1; then
+    docker buildx build --load \
+      --tag "cmdb-pr-check:${GITHUB_SHA:-local}" \
+      --cache-from type=gha \
+      --cache-to type=gha,mode=max \
+      .
+  else
+    docker build --tag "cmdb-pr-check:${GITHUB_SHA:-local}" .
+  fi
   checks_run=1
 fi
 

@@ -35,6 +35,23 @@ content; the caller must hydrate and reconcile instead of overwriting remote
 truth. Older V1.2 comments are normalized with additive V1.3/V1.4 defaults
 before validation.
 
+### Sync fast path
+
+`.cmdb-dev/github-meta.json` is a non-canonical accelerator next to the state
+cache. It records, per Work Item, the managed comment id and the last-synced
+state label. After the first successful sync (or hydrate) of an item, subsequent
+syncs take a steady-state path of at most two `gh` calls — one label edit when
+the status label changed and one comment PATCH — with no comment listing.
+
+The fast path relies on single-writer orchestration: only the Primary Agent
+mutates a Work Item, so the local revision is authoritative between sessions
+that hydrate. The conservative full path still runs on first sync, when the
+meta file is missing, or when the cached comment id 404s (comment deleted or
+issue recreated); it lists managed comments, asserts the remote revision guard
+described above, cleans stray `cmdb:*` labels, and repopulates the meta entry.
+Deleting the meta file is always safe — it only costs the next sync a full
+round trip.
+
 Historical `done` records that predate the V2 evidence fields are marked
 `legacy_completion: true` during normalization. They remain readable and are
 never upgraded into fabricated V2 evidence; every newly created Work Item uses

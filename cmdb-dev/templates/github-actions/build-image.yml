@@ -18,13 +18,10 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  validate-release:
-    name: validate-release
+  build-and-push:
+    name: build-and-push
     runs-on: ubuntu-latest
-    outputs:
-      image_name: ${{ steps.release.outputs.image_name }}
-      tag_sha: ${{ steps.release.outputs.tag_sha }}
-      version: ${{ steps.release.outputs.version }}
+    timeout-minutes: 60
     steps:
       - name: Checkout full history
         uses: actions/checkout@v4
@@ -52,17 +49,10 @@ jobs:
           echo "image_name=${image_name}" >> "${GITHUB_OUTPUT}"
           echo "tag_sha=${tag_sha}" >> "${GITHUB_OUTPUT}"
           echo "version=${GITHUB_REF_NAME#v}" >> "${GITHUB_OUTPUT}"
-
-  build-and-push:
-    name: build-and-push
-    needs: validate-release
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
       - name: Checkout validated commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-release.outputs.tag_sha }}
+          ref: ${{ steps.release.outputs.tag_sha }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
@@ -75,7 +65,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.validate-release.outputs.image_name }}
+          images: ${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}
           tags: |
             type=raw,value=${{ github.ref_name }}
             type=semver,pattern={{version}},value=${{ github.ref_name }}
@@ -91,12 +81,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
           provenance: mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}:buildcache,mode=max
       - name: Write delivery metadata
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ needs.validate-release.outputs.image_name }}
+          IMAGE: ${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-          TAG_SHA: ${{ needs.validate-release.outputs.tag_sha }}
+          TAG_SHA: ${{ steps.release.outputs.tag_sha }}
         shell: bash
         run: |
           set -euo pipefail
