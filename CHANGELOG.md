@@ -5,6 +5,22 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-09
+
+### Changed
+
+- Tag/image delivery no longer blocks the session on the image build. After
+  the tag push the Orchestrator starts one background
+  `gh run watch --exit-status` Bash task, tells the user the build is running,
+  and ends the turn — the session stays usable for other work items while the
+  build runs (up to 30 minutes). Build Checker is dispatched only once the run
+  has concluded: either when the background-task notification arrives, or on a
+  later resume that finds the item `building` and one `gh run list` shows the
+  run finished. `cmdb-build-checker` never blocks or polls: a still-running
+  build returns `build_result: running` with a re-dispatch recommendation.
+  State machine, Gate C human confirmation, and the image evidence chain are
+  unchanged; the persisted `building` state already supported this resume path.
+
 ## [2.2.0] - 2026-09-09
 
 ### Changed
