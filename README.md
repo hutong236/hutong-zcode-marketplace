@@ -6,7 +6,7 @@ CMDB AI 研发流水线的 ZCode 插件市场。仓库根目录即 Marketplace �
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `cmdb-dev` | 2.1.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `cmdb-dev` | 2.3.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 
 组件：8 个 `/cmdb_*` 命令、12 个 `cmdb-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
 
