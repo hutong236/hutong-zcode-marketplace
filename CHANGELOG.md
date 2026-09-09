@@ -5,6 +5,29 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-09
+
+### Changed
+
+- Release cadence is now on-demand and batched. The persisted delivery policy
+  default flips to `delivery_required: false` + `skip_allowed: true`: a merged
+  change closes as a human-confirmed skip instead of demanding a tag and image
+  every time. `delivery_required: true` is reserved for items where the user
+  explicitly asks to ship an image now. State machine, Gate C human
+  confirmation, and the image evidence chain are unchanged. To ship a batch,
+  open a small `maintenance` release item that only bumps the project version
+  and confirm its tag — one verified image covers every accumulated merge,
+  which respects GitHub free-plan quotas (Actions minutes, GHCR storage) on
+  private repositories.
+- The tag-triggered image workflow is adapted to free-plan limits: the Docker
+  layer cache moves from a GHCR `buildcache` image (private Packages storage)
+  to the free, auto-evicted GitHub Actions cache; the redundant `sha-*` image
+  tag is dropped; the delivery-metadata artifact retention drops from 90 to 7
+  days (the Release asset stays the permanent copy); the job timeout drops
+  from 60 to 30 minutes so a hung run burns fewer billable minutes.
+- Delivery-policy wording synced across the skill, `/cmdb_dev`,
+  `cmdb-planner`, the Obsidian work-item template, and all documentation.
+
 ## [2.1.0] - 2026-09-07
 
 ### Changed

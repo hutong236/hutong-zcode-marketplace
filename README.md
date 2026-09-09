@@ -35,7 +35,7 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 - Gate C：合并后必须人工确认 Tag/镜像交付；
 - 公开仓库优先使用 GitHub Required PR Checks；不具备付费分支保护的私有仓库改用 MCP 控制面校验，并强制停在 Gate B；
 - 控制面模式会核对 Actions 成功结果、固定 PR Head SHA，并要求合并命令携带 `--match-head-commit`；它不能阻止仓库管理员在 GitHub 页面手工绕过流程；
-- `skip` 只允许 Planner 明确标记 `delivery_required: false` 的非运行时改动；
+- 默认交付策略为 `delivery_required: false` + `skip_allowed: true`(合并后跳过镜像,按需批量发版);仅当用户明确要求本次出镜像时才标记 `delivery_required: true`;
 - Coder 完成后不增加人工 Gate，Tester 与 Reviewer 自动衔接。
 - 每个 Work Item 使用独立 worktree；受保护的 push/tag/merge/close 操作需要一次性状态授权；自动返工最多 3 轮。
 - 镜像完成必须交叉核对 Actions 元数据、GitHub Release 与 GHCR 摘要，并验证 SBOM/Provenance 证据。

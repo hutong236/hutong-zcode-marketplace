@@ -91,8 +91,13 @@ Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓
 /cmdb_tag_approve REQ-123 skip
 ```
 
-`skip` 仅适用于 Planner 已持久化
-`delivery_required: false` 且 `skip_allowed: true` 的非运行时改动。
+`skip` 适用于 Planner 已持久化 `delivery_required: false` 且
+`skip_allowed: true` 的条目——这是默认策略:发布按需批量进行,不要求每次
+合并都打 tag 发版,以适配 GitHub 免费套餐的 Actions 分钟数与 GHCR 存储配额。
+仅当用户明确要求本次出镜像时,才以 `delivery_required: true` 立项并在其
+Gate C 打 tag。要发一批累积改动时,开一个小型 maintenance 发布条目(仅提升
+版本号),在其 Gate C 打一个 tag——该提交包含全部先前已合并的 SHA,一次
+镜像即覆盖整批。
 
 Coder → Tester/Reviewer 之间没有额外人工 Gate;Coder 完成后同一轮并行派发 Tester 与 Reviewer(Reviewer 只读,不违反单 worktree 单写者),两侧结果齐备才推进,任一失败按返工环回到 Coder 并重新并行派发。
 

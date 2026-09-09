@@ -9,7 +9,7 @@ Obsidian Markdown are recoverable caches/projections.
 
 ```text
 Requirement → Issue → Human Approval → Isolated Worktree → Coder → Tester → Reviewer → PR → Merge
-  → Tag Confirm（人工 Gate：打 tag 触发镜像构建；仅非运行时改动可人工 skip）→ Actions Image → Close Issue → Done
+  → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Close Issue → Done
 ```
 
 Commands: `/cmdb_check`, `/cmdb_init`, `/cmdb_dev`, `/cmdb_approve`, `/cmdb_merge_approve`, `/cmdb_tag_approve`, `/cmdb_status`, `/cmdb_resume`.
@@ -25,8 +25,11 @@ git remote -v
 
 Repository should have a usable Dockerfile. Primary Agent is Orchestrator; plugin subagents do not call each other. Obsidian is read-only.
 
-`skip` is not a general-purpose shortcut. It is accepted only when Planner persisted
-`delivery_required: false` and `skip_allowed: true` for a change with no runtime impact.
+`skip` is the default delivery outcome under the on-demand release cadence:
+Planner persists `delivery_required: false` and `skip_allowed: true` unless the
+user explicitly asks to release an image with the item. Releases are batched on
+demand — one tag on a small maintenance release item covers every accumulated
+merge (see `docs/IMAGE_DELIVERY.md`).
 
 Each Work Item runs in `.cmdb-dev/worktrees/<ID>`. Automatic implementation
 rework is limited to three rounds. A state-aware hook requires a short-lived,

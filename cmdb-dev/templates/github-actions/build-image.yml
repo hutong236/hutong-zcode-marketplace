@@ -21,7 +21,7 @@ jobs:
   build-and-push:
     name: build-and-push
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - name: Checkout full history
         uses: actions/checkout@v4
@@ -70,7 +70,6 @@ jobs:
             type=raw,value=${{ github.ref_name }}
             type=semver,pattern={{version}},value=${{ github.ref_name }}
             type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }}
-            type=sha,prefix=sha-
       - name: Build, attest, and push
         id: build
         uses: docker/build-push-action@v6
@@ -81,8 +80,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
           provenance: mode=max
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Write delivery metadata
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ steps.release.outputs.image_name }}
@@ -109,7 +108,7 @@ jobs:
           name: cmdb-delivery-${{ github.ref_name }}
           path: delivery-metadata.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

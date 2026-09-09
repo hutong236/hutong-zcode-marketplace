@@ -5,9 +5,9 @@ title:
 type:
 status: waiting_approval
 risk_level:
-delivery_required: true
+delivery_required: false
 delivery_reason:
-skip_allowed: false
+skip_allowed: true
 human_approval: required
 owner:
 github_issue:

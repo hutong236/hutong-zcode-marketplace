@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 2.1.0
+  version: 2.2.0
 ---
 
 # CMDB Development Skill
@@ -46,7 +46,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 3. Dispatch `cmdb-planner` read-only.
 4. Call `cmdb_open_work_item`; it creates the GitHub Issue first, derives REQ/BUG ID, persists machine state, and writes the projection.
 5. Verify the returned Issue title/body and waiting_approval state.
-6. Persist Planner delivery policy: runtime-impacting work uses `delivery_required: true` and `skip_allowed: false`; only non-runtime documentation, projection templates, or marketplace metadata may use `delivery_required: false` and `skip_allowed: true`.
+6. Persist Planner delivery policy with an on-demand release cadence: the default is `delivery_required: false` and `skip_allowed: true`, so a merged change ships no image until the user explicitly asks to release. Use `delivery_required: true` and `skip_allowed: false` only when the user explicitly requests an image/release for this item.
 7. Write/update local read-only Markdown projection.
 8. Set `status: waiting_approval`, `human_approval: required`.
 9. STOP. Do not create branch or edit business code.
@@ -63,11 +63,15 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 8. Create PR with `gh pr create`; body uses `Refs #<issue>`, never `Closes`/`Fixes`.
 9. Call `cmdb_verify_pr_checks`. It verifies the exact PR Head SHA and successful `CMDB PR Checks / verify`. Public repositories require GitHub-side enforcement. A private repository without paid branch protection records `control_plane_verified` instead; missing or non-successful checks always block.
 10. GitHub-enforced low/medium risk may perform one authorized merge. High risk and every control-plane-guarded private-repository merge stop at `waiting_human_merge`. After Gate B, the merge command must include `--match-head-commit <persisted-pr-head-sha>`; human approval never bypasses checks.
-11. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or, only when the persisted delivery policy allows it, skip. A missing image workflow never authorizes an automatic skip.
+11. After merge set `waiting_tag_confirm`, record merged SHA, and STOP: ask whether to tag (ship image) or skip. Under the on-demand cadence recommend skip — the change ships with a later batched release. A missing image workflow never authorizes an automatic skip.
 12. Tag confirmed via `/cmdb_tag_approve <ID> [vX.Y.Z]`: create an annotated tag on the merged SHA (name from the user, else next patch of the latest `v*` tag — state it), push the tag, wait for the tag-triggered image build with one blocking `gh run watch <run-id> --exit-status --interval 30` Bash call instead of repeated polling, dispatch Build Checker.
 13. Build Checker downloads both the Actions artifact and GitHub Release `delivery-metadata.json`, independently queries the matching GHCR version/remote manifest, verifies SBOM and provenance attestations, and compares tag commit to merged SHA. Logs alone never prove delivery. Primary Agent calls `cmdb_verify_delivery` with both metadata objects and the registry digest.
 14. Only when all evidence agrees: record image/tag/digest/SHA/run URL/Release URL and verified registry/SBOM/provenance status, close Issue, mark Done.
 15. Skip confirmed via `/cmdb_tag_approve <ID> skip`: allow only when `delivery_required: false` and `skip_allowed: true`; record the human confirmation and reason, set `build_status: skipped`, close Issue, mark Done without image evidence.
+
+## On-demand batched releases
+
+Releases are explicit, batched events, not a per-merge ritual — this respects GitHub free-plan quotas (Actions minutes and GHCR storage) on private repositories. Skipped items accumulate on the default branch. When the user asks to ship, open a small `maintenance` release item whose only code change bumps the project version, run the standard flow, and confirm the tag at its Gate C: the tagged commit contains every previously merged SHA, so one verified image covers the whole batch. To ship one item immediately instead, confirm the tag at that item's own Gate C.
 
 ## Done definition
 
