@@ -69,6 +69,65 @@ test("non-runtime work may complete through an explicit human skip", () => {
   assert.equal(validateWorkItem(item), true);
 });
 
+test("skip-allowed work closes itself via policy_skip after merge", () => {
+  let item = runtimeItem({
+    risk_level: "low",
+    delivery_required: false,
+    delivery_reason: "UI tweak; on-demand batched release",
+    skip_allowed: true,
+  });
+  item = { ...item, status: "waiting_tag_confirm", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", ...githubGuard, merged_sha: sha };
+  item = move(item, "policy_skip", {}, "orchestrator");
+  assert.equal(item.status, "waiting_close");
+  assert.equal(item.tag_confirmation, "skipped_by_policy");
+  assert.equal(item.build_status, "skipped");
+  assert.equal(item.next_action, "close_issue");
+  item = move(item, "issue_closed");
+  assert.equal(item.status, "done");
+  assert.equal(validateWorkItem(item), true);
+});
+
+test("policy_skip stays bound to the persisted skip policy and Gate A approval", () => {
+  const runtime = { ...runtimeItem(), status: "waiting_tag_confirm", human_approval: "approved" };
+  assert.throws(() => move(runtime, "policy_skip"), /skip is forbidden/);
+
+  const unapproved = runtimeItem({
+    delivery_required: false,
+    delivery_reason: "Documentation only",
+    skip_allowed: true,
+  });
+  const pending = { ...unapproved, status: "waiting_tag_confirm" };
+  assert.throws(() => move(pending, "policy_skip"), /Gate A approval/);
+
+  const midMerge = { ...unapproved, status: "merging", human_approval: "approved" };
+  assert.throws(() => move(midMerge, "policy_skip"), /Invalid transition/);
+});
+
+test("size classifies the intake lane and stays consistent with risk", () => {
+  const small = createWorkItem({
+    id: "REQ-31",
+    issue_number: 31,
+    title: "Button copy tweak",
+    risk_level: "low",
+    size: "small",
+    delivery_required: false,
+    delivery_reason: "UI tweak; on-demand batched release",
+    skip_allowed: true,
+  }, clock);
+  assert.equal(small.size, "small");
+
+  assert.throws(() => runtimeItem({ risk_level: "medium", size: "small" }), /size small requires risk_level low/);
+  assert.throws(() => runtimeItem({ size: "tiny" }), /size must be one of/);
+  assert.equal(runtimeItem().size, "standard");
+
+  const escalated = move({ ...small, status: "waiting_approval" }, "approve_requirement", { size: "standard" }, "human:owner");
+  assert.equal(escalated.size, "standard");
+  assert.throws(
+    () => validateWorkItem({ ...small, risk_level: "medium" }),
+    /size small requires low risk/,
+  );
+});
+
 test("image verification requires a digest", () => {
   const item = { ...runtimeItem(), status: "building", human_approval: "approved", tester_result: "passed", reviewer_result: "approved", pr_checks: "passed", ...githubGuard, merged_sha: sha };
   assert.throws(() => move(item, "image_verified"), /image_digest/);

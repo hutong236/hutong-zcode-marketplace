@@ -22,6 +22,7 @@ export const STATES = Object.freeze([
 ]);
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
+export const SIZES = Object.freeze(["standard", "small"]);
 export const MERGE_GUARD_MODES = Object.freeze([
   "unverified",
   "github_required_checks",
@@ -48,7 +49,7 @@ const STATIC_TRANSITIONS = Object.freeze({
   pr_checking: { checks_failed: "doing" },
   waiting_human_merge: { approve_merge: "merging" },
   merging: { pr_merged: "waiting_tag_confirm" },
-  waiting_tag_confirm: { approve_tag: "building", approve_skip: "waiting_close" },
+  waiting_tag_confirm: { approve_tag: "building", approve_skip: "waiting_close", policy_skip: "waiting_close" },
   building: { image_verified: "waiting_close" },
   waiting_close: { issue_closed: "done" },
 });
@@ -79,6 +80,7 @@ const PATCH_FIELDS = new Set([
   "release_url",
   "sbom_status",
   "sbom_digest",
+  "size",
   "tag_confirmation",
   "workflow_run_url",
   "worktree_path",
@@ -150,6 +152,7 @@ export function normalizeWorkItem(item) {
   if (!("pr_head_sha" in next)) next.pr_head_sha = null;
   if (!("pr_check_name" in next)) next.pr_check_name = null;
   if (!("pr_check_run_url" in next)) next.pr_check_run_url = null;
+  if (!("size" in next)) next.size = "standard";
   if (!("legacy_completion" in next)) next.legacy_completion = historicalDone;
   return next;
 }
@@ -162,6 +165,10 @@ export function createWorkItem(input, now = () => new Date()) {
   if (Number(idMatch[2]) !== issueNumber) throw new Error("Work Item id number must equal issue_number");
   if (!RISKS.includes(input.risk_level)) throw new Error(`risk_level must be one of ${RISKS.join(", ")}`);
   if (!String(input.title ?? "").trim()) throw new Error("title is required");
+
+  const size = input.size ?? "standard";
+  if (!SIZES.includes(size)) throw new Error(`size must be one of ${SIZES.join(", ")}`);
+  if (size === "small" && input.risk_level !== "low") throw new Error("size small requires risk_level low");
 
   const deliveryRequired = asBoolean(input.delivery_required, true);
   const skipAllowed = asBoolean(input.skip_allowed, false);
@@ -181,6 +188,7 @@ export function createWorkItem(input, now = () => new Date()) {
     status: "waiting_approval",
     previous_status: null,
     risk_level: input.risk_level,
+    size,
     delivery_required: deliveryRequired,
     delivery_reason: String(input.delivery_reason ?? "").trim(),
     skip_allowed: skipAllowed,
@@ -269,8 +277,11 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   if (!evidence) throw new Error("Every transition requires evidence");
   requireHumanActor(event, actor);
 
-  if (event === "approve_skip" && (item.delivery_required || !item.skip_allowed)) {
+  if ((event === "approve_skip" || event === "policy_skip") && (item.delivery_required || !item.skip_allowed)) {
     throw new Error("skip is forbidden by the persisted delivery policy");
+  }
+  if (event === "policy_skip" && item.human_approval !== "approved") {
+    throw new Error("policy_skip requires the Gate A approval that persisted the delivery policy");
   }
   if (event === "start_planning") {
     if (!String(payload.patch?.branch ?? "").trim()) throw new Error("start_planning requires branch");
@@ -410,6 +421,10 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
     next.tag_confirmation = "skipped_by_human";
     next.build_status = "skipped";
     next.next_action = "close_issue";
+  } else if (event === "policy_skip") {
+    next.tag_confirmation = "skipped_by_policy";
+    next.build_status = "skipped";
+    next.next_action = "close_issue";
   } else if (event === "image_verified") {
     next.build_status = "passed";
     next.next_action = "close_issue";
@@ -446,6 +461,8 @@ export function validateWorkItem(item) {
   if (idMatch && Number(idMatch[2]) !== item.issue_number) errors.push("id/issue mismatch");
   if (!STATES.includes(item.status)) errors.push("invalid status");
   if (!RISKS.includes(item.risk_level)) errors.push("invalid risk_level");
+  if (!SIZES.includes(item.size)) errors.push("invalid size");
+  if (item.size === "small" && item.risk_level !== "low") errors.push("size small requires low risk");
   if (!String(item.title ?? "").trim()) errors.push("title required");
   if (typeof item.required_checks_enforced !== "boolean") errors.push("invalid required_checks_enforced");
   if (!MERGE_GUARD_MODES.includes(item.merge_guard_mode)) errors.push("invalid merge_guard_mode");

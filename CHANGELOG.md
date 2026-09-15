@@ -5,6 +5,37 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-15
+
+### Added
+
+- Small-change fast lane (`size: small`): trivial requests — pure
+  frontend/UI or docs work, few expected files, no schema/API/auth/data-path
+  change, low risk — skip the read-only planner subagent dispatch. The
+  Orchestrator writes the planner summary, risk, delivery policy, and
+  acceptance criteria inline and passes `size: "small"` to
+  `cmdb_open_work_item`; the Issue body marks the fast lane. Everything else
+  keeps `size: "standard"` with the full Planner analysis. If small-scope
+  work balloons, the item patches back to `standard`. The state machine
+  requires `size: small` to pair with `risk_level: low` and backfills
+  `size: "standard"` for pre-existing items via `normalizeWorkItem`.
+
+### Changed
+
+- Skip-allowed items close themselves after merge. A new internal
+  `policy_skip` transition (orchestrator actor, not in `HUMAN_EVENTS`) moves
+  `waiting_tag_confirm → waiting_close` immediately after `pr_merged` when
+  the persisted policy is `delivery_required: false` and
+  `skip_allowed: true`, recording `tag_confirmation: "skipped_by_policy"`.
+  Its authority is the Gate A approval that persisted the delivery policy —
+  the transition refuses to fire without it, so the human who approved the
+  requirement remains the authorizing party. This removes the third
+  per-item human stop (`/cmdb_tag_approve <ID> skip`) that merely re-confirmed
+  a policy already approved at Gate A. Human `approve_skip` remains as the
+  manual override for items already parked at `waiting_tag_confirm` (for
+  example a session resumed between merge and close), and every
+  tag-delivery path (`approve_tag`, Gate C stop) is unchanged.
+
 ## [2.3.0] - 2026-09-09
 
 ### Changed

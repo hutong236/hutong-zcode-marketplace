@@ -33,6 +33,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       title: text,
       type: { enum: ["feature", "bug", "refactor", "maintenance"] },
       risk_level: { enum: ["low", "medium", "high"] },
+      size: { enum: ["standard", "small"], default: "standard" },
       delivery_required: { type: "boolean" },
       delivery_reason: { type: "string" },
       skip_allowed: { type: "boolean" },
@@ -156,7 +157,11 @@ function liveFacts(root, item, repository) {
 
 function issueBody(args) {
   const criteria = args.acceptance_criteria.map((value) => `- [ ] ${value}`).join("\n");
-  return `<!-- cmdb-dev-work-item:v2 -->\n\n## Planner summary\n${args.planner_summary}\n\n## Acceptance criteria\n${criteria}\n\n## Delivery policy\n- delivery_required: ${args.delivery_required}\n- skip_allowed: ${args.skip_allowed}\n- reason: ${args.delivery_reason || "Runtime delivery required"}\n`;
+  const size = args.size ?? "standard";
+  const intake = size === "small"
+    ? "## Intake\n- size: small (fast lane — inline plan, no planner subagent dispatch)\n\n"
+    : "";
+  return `<!-- cmdb-dev-work-item:v2 -->\n\n${intake}## Planner summary\n${args.planner_summary}\n\n## Acceptance criteria\n${criteria}\n\n## Delivery policy\n- delivery_required: ${args.delivery_required}\n- skip_allowed: ${args.skip_allowed}\n- reason: ${args.delivery_reason || "Runtime delivery required"}\n`;
 }
 
 export function callTool(name, args = {}, context = {}) {
@@ -182,6 +187,7 @@ export function callTool(name, args = {}, context = {}) {
         title: args.title,
         type: args.type,
         risk_level: args.risk_level,
+        size: args.size ?? "standard",
         delivery_required: args.delivery_required,
         delivery_reason: args.delivery_reason,
         skip_allowed: args.skip_allowed,

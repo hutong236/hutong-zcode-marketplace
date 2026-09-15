@@ -40,6 +40,7 @@
       ]
     },
     "risk_level": { "enum": ["low", "medium", "high"] },
+    "size": { "enum": ["standard", "small"], "default": "standard" },
     "delivery_required": { "type": "boolean" },
     "delivery_reason": { "type": "string" },
     "skip_allowed": { "type": "boolean" },

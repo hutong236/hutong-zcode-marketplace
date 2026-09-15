@@ -1,8 +1,8 @@
 # CMDB 项目：ZCode AI 研发流水线规范
 
-**版本：** V2.3.0
+**版本：** V2.4.0
 
-**日期：** 2026-09-09
+**日期：** 2026-09-15
 
 **适用范围：** CMDB 项目研发
 
@@ -51,7 +51,11 @@ GitHub Issue 评论包含 `cmdb-dev-state:v2` 机器块，状态标签为
 `/cmdb_dev` 的固定顺序：
 
 1. `cmdb_preflight`；
-2. Primary Agent 调度只读 Planner；
+2. Primary Agent 做小修判定：纯前端/文档、预期改动文件很少、不碰
+   schema/API/认证/数据链路且 `risk_level: low` 的请求记为
+   `size: small`,由 Primary Agent 内联产出计划摘要与验收标准；
+   其余派发只读 Planner,记为 `size: standard`。小修条目若在编码
+   阶段膨胀越界,patch 回 `standard` 并按常规纪律继续;
 3. `cmdb_open_work_item` 先创建 GitHub Issue；
 4. 用 Issue Number 生成 `REQ-<number>` 或 `BUG-<number>`；
 5. 写入状态与投影；
@@ -82,22 +86,28 @@ Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并
 Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓库统一使用
 控制面校验，并且所有风险等级都必须经过 Gate B。
 
-### Gate C：Tag / 镜像交付
+### Gate C:Tag / 镜像交付
 
-合并后必须停在 `waiting_tag_confirm`：
+合并后进入 `waiting_tag_confirm`:
 
 ```text
 /cmdb_tag_approve REQ-123 v2.1.0
 /cmdb_tag_approve REQ-123 skip
 ```
 
-`skip` 适用于 Planner 已持久化 `delivery_required: false` 且
-`skip_allowed: true` 的条目——这是默认策略:发布按需批量进行,不要求每次
-合并都打 tag 发版,以适配 GitHub 免费套餐的 Actions 分钟数与 GHCR 存储配额。
-仅当用户明确要求本次出镜像时,才以 `delivery_required: true` 立项并在其
-Gate C 打 tag。要发一批累积改动时,开一个小型 maintenance 发布条目(仅提升
-版本号),在其 Gate C 打一个 tag——该提交包含全部先前已合并的 SHA,一次
-镜像即覆盖整批。
+Gate C 的人工停等只服务于出镜像的条目。`Planner` 已持久化
+`delivery_required: false` 且 `skip_allowed: true` 的条目——这是默认
+策略——在 `pr_merged` 之后由 orchestrator 立即发出 `policy_skip`
+(证据引用 Gate A 批准记录),自动进入关单流程,不再等待人工确认。
+该停等与人工 `approve_skip` 命令保留为手动覆盖路径,适用于条目已停在
+`waiting_tag_confirm` 的场景(例如会话在合并与关单之间中断)。
+
+默认策略为发布按需批量进行,不要求每次合并都打 tag 发版,以适配
+GitHub 免费套餐的 Actions 分钟数与 GHCR 存储配额。仅当用户明确要求
+本次出镜像时,才以 `delivery_required: true` 立项并在其 Gate C 打
+tag。要发一批累积改动时,开一个小型 maintenance 发布条目(仅提升
+版本号),在其 Gate C 打一个 tag——该提交包含全部先前已合并的 SHA,
+一次镜像即覆盖整批。
 
 Coder → Tester/Reviewer 之间没有额外人工 Gate;Coder 完成后同一轮并行派发 Tester 与 Reviewer(Reviewer 只读,不违反单 worktree 单写者),两侧结果齐备才推进,任一失败按返工环回到 Coder 并重新并行派发。
 
@@ -122,6 +132,7 @@ stateDiagram-v2
   merging --> waiting_tag_confirm: pr_merged
   waiting_tag_confirm --> building: approve_tag
   waiting_tag_confirm --> waiting_close: approve_skip
+  waiting_tag_confirm --> waiting_close: policy_skip
   building --> waiting_close: image_verified
   waiting_close --> done: issue_closed
 ```
@@ -235,8 +246,9 @@ approved、PR workflow checks passed、merge guard verified、PR merged、Issue 
 运行时交付还必须具备：人工 Gate C、严格 SemVer Tag、merged SHA 一致、GHCR
 Digest 一致、Release 元数据一致、SBOM verified、provenance verified。
 
-非运行时 skip 路径必须具备：Planner 持久化允许、人工 Gate C、
-`build_status: skipped`。
+非运行时 skip 路径必须具备：Planner 持久化允许、`build_status:
+skipped`,且满足其一——Gate A 已批准的持久化策略下由 `policy_skip`
+自动应用,或人工 Gate C 以 `approve_skip` 显式确认。
 
 ## 12. 项目边界
 
