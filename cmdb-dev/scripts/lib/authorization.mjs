@@ -61,11 +61,18 @@ function commandHasNumber(command, number) {
   return new RegExp(`(?:^|\\s)${number}(?:\\s|$)`).test(command);
 }
 
+// git 输出真实路径,而状态里记录的可能是含软链的原始路径(如 macOS 的 /var),比较前必须统一
+function canonicalPath(target) {
+  if (!target) return target;
+  const resolved = path.resolve(target);
+  return fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
+}
+
 function assertExecutionScope(root, item, action, cwd, command) {
   if (!cwd || !command) throw new Error("Authorization consumption requires command context");
-  if (path.resolve(findControlRoot(cwd)) !== path.resolve(root)) throw new Error("Protected command targets a different repository");
+  if (canonicalPath(findControlRoot(cwd)) !== canonicalPath(root)) throw new Error("Protected command targets a different repository");
   if (action === "git-push" && item.status === "pr_open") {
-    if (path.resolve(findRepositoryRoot(cwd)) !== path.resolve(item.worktree_path ?? "")) {
+    if (canonicalPath(findRepositoryRoot(cwd)) !== canonicalPath(item.worktree_path ?? "")) {
       throw new Error(`Branch push must run in ${item.worktree_path}`);
     }
     const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout.trim();

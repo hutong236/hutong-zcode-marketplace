@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 2.4.0
+  version: 2.4.1
 ---
 
 # CMDB Development Skill

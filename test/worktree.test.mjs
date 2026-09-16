@@ -8,7 +8,8 @@ import { createWorktree, defaultBranchFor } from "../cmdb-dev/scripts/lib/worktr
 import { findControlRoot } from "../cmdb-dev/scripts/lib/state-store.mjs";
 
 test("worktree creation isolates a Work Item on its own branch", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-worktree-"));
+  // git 输出真实路径,macOS 的 /var 软链需先解析才能与夹具路径一致
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-worktree-")));
   execFileSync("git", ["init", "-q"], { cwd: root });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
   execFileSync("git", ["config", "user.name", "CMDB Test"], { cwd: root });

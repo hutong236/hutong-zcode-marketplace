@@ -12,7 +12,8 @@ import { analyzeCommand, evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
 const clock = () => new Date("2026-08-31T12:00:00Z");
 
 function repositoryWithItem(status, overrides = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-auth-"));
+  // git 输出真实路径,macOS 的 /var 软链需先解析才能与夹具路径一致
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-auth-")));
   execFileSync("git", ["init", "-q"], { cwd: root });
   const item = { ...createWorkItem({
     id: "REQ-25",

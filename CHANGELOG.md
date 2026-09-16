@@ -5,6 +5,19 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-16
+
+### Fixed
+
+- Authorization scope checks no longer reject protected operations when the
+  control root or worktree path contains a symlink: both sides of the
+  repository/worktree comparison are canonicalized with `realpath` before
+  comparing, so git's resolved output (`/private/var/...` on macOS) matches
+  the path recorded in state. This also un-breaks the three macOS-only test
+  failures (authorization ×2, worktree ×1) that made every local tester gate
+  fail while CI stayed green; test fixtures now build under the resolved
+  temp path.
+
 ## [2.4.0] - 2026-09-15
 
 ### Added
