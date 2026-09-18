@@ -5,6 +5,27 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-09-18
+
+### Changed
+
+- PR-check waiting is now asynchronous, mirroring the tag-build watch. The
+  skill, `/cmdb_approve`, and `/cmdb_resume` no longer leave the wait between
+  `pr_created` and `cmdb_verify_pr_checks` undefined — the gap that produced a
+  6-minute blocking `gh run watch` in the REQ-122 v2.2.32 release session.
+  While the check run is in progress the Orchestrator starts one background
+  `gh run watch <run-id> --exit-status --interval 30` task, tells the user the
+  checks are running, and ends the turn; a resume or `cmdb_status` finding the
+  item `pr_checking` runs one `gh run list` query and re-arms the watch or
+  proceeds straight to verification when the run has concluded.
+- An early `/cmdb_tag_approve` issued while the item still sits at
+  `waiting_human_merge` now counts as one explicit human confirmation covering
+  Gate B plus Gate C: after `cmdb_verify_pr_checks` passes, the Orchestrator
+  records `approve_merge`, performs one authorized
+  `--match-head-commit` merge, records `pr_merged`, and continues the tag path
+  in the same turn. Checks are never bypassed; previously this ordering forced
+  the model to improvise the gate interpretation mid-session.
+
 ## [2.4.1] - 2026-09-16
 
 ### Fixed
