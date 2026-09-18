@@ -5,6 +5,30 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-09-18
+
+### Added
+
+- Worktree housekeeping after Done (new lifecycle step 16, plus the close
+  paths of `/cmdb_approve`, `/cmdb_merge_approve`, `/cmdb_tag_approve`, and
+  `/cmdb_resume`): once an item reaches `issue_closed`, the Orchestrator
+  removes its merged worktree with plain `git worktree remove` (never
+  `--force`; a dirty or locked worktree stays and is reported) followed by
+  `git branch -d`. Forensics over 49 V2-flow sessions showed worktrees
+  accumulating unboundedly — 38 leftovers forced the manual REQ-85 cleanup
+  item, and 8 more accumulated within two days of that cleanup.
+
+### Changed
+
+- The skill's isolation section now pins the exact accepted shape of a
+  protected command — one Bash call, working directory set directly on the
+  tool, exactly one operation, fresh token for the matching action — with
+  three literal examples (push, annotated tag naming the merged SHA, Issue
+  close) and the rejection-recovery rule (re-issue `cmdb_authorize`, retry
+  the single corrected command). Guard-contract violations were 96 of 218
+  recorded errors (cwd indirection, unauthorized ordering, token misuse,
+  batched operations).
+
 ## [2.4.2] - 2026-09-18
 
 ### Changed

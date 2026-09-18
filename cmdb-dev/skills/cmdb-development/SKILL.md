@@ -4,7 +4,7 @@ description: Use for CMDB project feature, bug, refactor, GitHub Issue, Pull Req
 when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a CMDB requirement or bug.
 metadata:
   author: CMDB Project
-  version: 2.4.2
+  version: 2.4.3
 ---
 
 # CMDB Development Skill
@@ -33,7 +33,13 @@ The state CLI remains a diagnostic/compatibility surface only. MCP validates inp
 
 After Gate A, create exactly one worktree with the state runtime `worktree` command and record both `branch` and `worktree_path`. Planner remains read-only; Coder, Tester and Reviewer must operate only in that path. Never dispatch two writers to one worktree. Automatic `tests_failed`, `changes_requested`, or `checks_failed` rework is limited to three rounds; the next failure blocks for human intervention.
 
-The PreToolUse guard protects push, tag mutation, PR merge and Issue close. Immediately before one protected command, the Primary Agent calls `cmdb_authorize` for the exact Work Item and action, then supplies `CMDB_AUTH_TOKEN=<token>` to that one command. Never reuse or expose tokens, batch protected operations, or ask a subagent to issue authorization.
+The PreToolUse guard protects push, tag mutation, PR merge and Issue close. Immediately before one protected command, the Primary Agent calls `cmdb_authorize` for the exact Work Item and action, then supplies `CMDB_AUTH_TOKEN=<token>` to that one command. Never reuse or expose tokens, batch protected operations, or ask a subagent to issue authorization. The accepted shape is exact — one Bash call whose working directory is set directly on the tool to the managed repository (never via `cd`, `git -C`, or a subshell) running exactly one operation, with a fresh token for the matching action:
+
+    CMDB_AUTH_TOKEN=<token> git push origin HEAD
+    CMDB_AUTH_TOKEN=<token> git tag -a v2.2.33 -m "Release v2.2.33" <merged-sha>
+    CMDB_AUTH_TOKEN=<token> gh issue close 122 --repo <owner/repo> --comment "Done"
+
+A guard rejection — cwd indirection, more than one operation in the call, a token issued for a different action, or a reused/expired token — is fixed only by re-issuing `cmdb_authorize` and retrying the single corrected command; never widen the command, chain a repair, or reuse the old token.
 
 ## Work Item identity
 
@@ -68,6 +74,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 13. Build Checker downloads both the Actions artifact and GitHub Release `delivery-metadata.json`, independently queries the matching GHCR version/remote manifest, verifies SBOM and provenance attestations, and compares tag commit to merged SHA. Logs alone never prove delivery. Primary Agent calls `cmdb_verify_delivery` with both metadata objects and the registry digest.
 14. Only when all evidence agrees: record image/tag/digest/SHA/run URL/Release URL and verified registry/SBOM/provenance status, close Issue, mark Done.
 15. Skip confirmed via `/cmdb_tag_approve <ID> skip`: allow only when `delivery_required: false` and `skip_allowed: true`; record the human confirmation and reason, set `build_status: skipped`, close Issue, mark Done without image evidence. This is the manual override for items already sitting at `waiting_tag_confirm` (for example a session resumed between merge and close); the normal path for skip-allowed items is the automated `policy_skip` in step 11.
+16. Housekeeping after Done: once an item reaches `issue_closed`, remove its merged worktree so `.cmdb-dev/worktrees/` never accumulates — from the managed repository run plain `git worktree remove <worktree_path>` (never `--force`; a dirty or locked worktree stays and gets reported) followed by `git branch -d <branch>` (lowercase `-d` refuses unmerged branches). Keep the worktree whenever the item is blocked, the branch holds unmerged commits, or delivery evidence may still be needed; a periodic manual cleanup item is never the remedy.
 
 ## On-demand batched releases
 
