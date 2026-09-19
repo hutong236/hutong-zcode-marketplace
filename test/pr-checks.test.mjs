@@ -35,10 +35,24 @@ test("private repositories may use the exact-SHA control-plane guard", () => {
     pr,
     isPrivate: true,
     requiredContexts: [],
+    riskLevel: "low",
   });
   assert.equal(result.patch.merge_guard_mode, "control_plane_verified");
   assert.equal(result.patch.required_checks_enforced, false);
-  assert.equal(result.human_merge_required, true);
+  assert.equal(result.human_merge_required, false);
+});
+
+test("human merge requirement follows the risk tier, not the guard mode", () => {
+  const high = evaluatePrCheckEvidence({
+    pr,
+    isPrivate: true,
+    requiredContexts: [],
+    riskLevel: "high",
+  });
+  assert.equal(high.human_merge_required, true);
+  // 未提供风险等级时按高风险兜底(fail-safe)
+  const defaulted = evaluatePrCheckEvidence({ pr, isPrivate: true, requiredContexts: [] });
+  assert.equal(defaulted.human_merge_required, true);
 });
 
 test("public repositories without free branch enforcement remain blocked", () => {

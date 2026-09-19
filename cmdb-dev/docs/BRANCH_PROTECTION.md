@@ -25,7 +25,7 @@ Public repositories and paid GitHub plans should protect the default branch:
 - apply the rule to administrators when repository policy permits.
 
 This is recorded as `merge_guard_mode: github_required_checks` and permits the
-existing low/medium-risk automatic merge path after Tester and Reviewer pass.
+low/medium-risk automatic merge path after Tester and Reviewer pass.
 
 ## Mode 2: private-repository control-plane guard
 
@@ -37,9 +37,11 @@ that environment `cmdb_verify_pr_checks` performs the compensating control:
 3. persist the PR head SHA, check name, and GitHub details URL;
 4. record `merge_guard_mode: control_plane_verified` without claiming that
    GitHub itself enforces the check;
-5. force every risk level to stop at human Gate B;
-6. issue a one-use merge authorization only for a command containing
-   `--match-head-commit <verified-sha>`.
+5. tier Gate B by risk like the GitHub-enforced mode: low/medium risk merges
+   automatically under the compensating controls above (every reported check
+   must succeed), while high risk still stops at human Gate B;
+6. verify every merge command against the recorded state — token or
+   state-verified — and require `--match-head-commit <verified-sha>`.
 
 This mode protects merges performed through `cmdb-dev`, but it cannot prevent a
 repository administrator from manually merging or pushing through the GitHub

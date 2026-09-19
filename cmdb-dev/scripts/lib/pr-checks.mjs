@@ -42,6 +42,7 @@ export function evaluatePrCheckEvidence({
   isPrivate,
   requiredContexts = [],
   checkName = DEFAULT_PR_CHECK,
+  riskLevel = "high",
 }) {
   if (String(pr?.state ?? "").toLowerCase() !== "open") throw new Error("PR checks require an open pull request");
   if (pr?.isDraft) throw new Error("PR checks cannot pass while the pull request is a draft");
@@ -78,7 +79,7 @@ export function evaluatePrCheckEvidence({
     },
     server_enforced: serverEnforced,
     private_repository: Boolean(isPrivate),
-    human_merge_required: !serverEnforced,
+    human_merge_required: riskLevel === "high",
   };
 }
 
@@ -131,5 +132,6 @@ export function verifyPullRequestChecks({ root, repository, item, checkName = DE
     isPrivate: repositoryInfo.isPrivate,
     requiredContexts,
     checkName,
+    riskLevel: item.risk_level,
   });
 }

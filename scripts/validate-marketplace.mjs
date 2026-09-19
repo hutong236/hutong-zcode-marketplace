@@ -67,6 +67,29 @@ assert(entry?.source === "./cmdb-dev", "cmdb-dev marketplace source must be ./cm
 assert(entry?.strict === true, "cmdb-dev marketplace entry must use strict validation");
 assert(entry?.version === plugin.version, "marketplace and plugin versions differ");
 assert(plugin.version === packageJson.version, "plugin and package versions differ");
+
+// 版本号全锁:除上面三处 JSON,README 插件表、流程规范文档头、SKILL frontmatter、
+// CHANGELOG 最新版本标题也必须与 plugin.version 一致,消除手工同步翻车
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const version = escapeRegExp(plugin.version);
+assert(new RegExp(`\\|\\s*\`cmdb-dev\`\\s*\\|\\s*${version}\\s*\\|`).test(read("README.md")),
+  "README plugin table version differs from plugin.json");
+assert(new RegExp(`^\\*\\*版本：\\*\\*\\s*V${version}\\s*$`, "m").test(read("CMDB_ZCode_AI_Dev_Workflow.md")),
+  "CMDB_ZCode_AI_Dev_Workflow.md header version differs from plugin.json");
+assert(new RegExp(`^\\s*version:\\s*${version}\\s*$`, "m").test(read("cmdb-dev/skills/cmdb-development/SKILL.md")),
+  "SKILL.md frontmatter version differs from plugin.json");
+assert(new RegExp(`^## \\[${version}\\]`, "m").test(read("CHANGELOG.md")),
+  "CHANGELOG.md is missing the current version heading");
+
+// 策略哨兵:默认交付策略的载重令牌在四处文档中必须原样出现,漂移即失败
+for (const policyDoc of ["README.md", "INSTALL.md", "CMDB_ZCode_AI_Dev_Workflow.md", "cmdb-dev/skills/cmdb-development/SKILL.md"]) {
+  const content = read(policyDoc);
+  assert(content.includes("`delivery_required: false`"), `${policyDoc}: default delivery policy token \`delivery_required: false\` is missing`);
+  assert(content.includes("`skip_allowed: true`"), `${policyDoc}: default delivery policy token \`skip_allowed: true\` is missing`);
+}
 assert(plugin.mcpServers === ".mcp.json", "plugin must declare the bundled MCP configuration");
 assert(hooks.hooks?.PreToolUse?.some((entry) => entry.matcher === "Bash"), "Bash PreToolUse guard is missing");
 assert(Array.isArray(hooks.hooks?.SessionStart), "SessionStart context hook is missing");

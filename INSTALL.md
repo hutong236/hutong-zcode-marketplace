@@ -57,10 +57,10 @@ Settings → Plugins → Create → Add marketplace
 /cmdb_tag_approve REQ-123 v1.2.3
 ```
 
-默认交付策略是 `delivery_required: false` + `skip_allowed: true`(按需批量发版,不要求每次合并都打 tag),允许:
+默认交付策略是 `delivery_required: false` + `skip_allowed: true`(按需批量发版,不要求每次合并都打 tag):允许 skip 的条目合并后自动关单,已停在 `waiting_tag_confirm` 的条目也可人工确认跳过:
 
 ```text
 /cmdb_tag_approve REQ-123 skip
 ```
 
-仅当用户明确要求本次出镜像时,才以 `delivery_required: true` 立项并打 tag。要发一批累积改动时,开一个小型 maintenance 发布条目(仅提升版本号),在其 Gate C 打一个 tag,一次镜像即可覆盖整批已合并改动。
+仅当用户明确要求本次出镜像时,才以 `delivery_required: true` 立项并在其 Gate C 打 tag。按需批量发版的完整规则见 [CMDB_ZCode_AI_Dev_Workflow.md](CMDB_ZCode_AI_Dev_Workflow.md) 的 Gate C 一节。

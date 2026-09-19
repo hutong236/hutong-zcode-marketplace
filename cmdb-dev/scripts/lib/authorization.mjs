@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { findControlRoot, findRepositoryRoot, getItem } from "./state-store.mjs";
+import { findControlRoot, findRepositoryRoot, getItem, readStore } from "./state-store.mjs";
 import { mergeGuardSatisfied } from "./state-machine.mjs";
 
 export const AUTHORIZATION_ACTIONS = Object.freeze([
@@ -144,4 +144,39 @@ export function consumeAuthorization(root, { token, action, cwd, command }, now 
   authorization.used_at = now().toISOString();
   atomicWrite(file, authorization);
   return authorization;
+}
+
+// issue-close / pr-merge 允许无令牌的状态自证:状态机到达 waiting_close / merging
+// 之前已完成全部证据校验,当前状态本身就是授权。复用令牌消费的同一套
+// assertActionState + assertExecutionScope;操作成功后状态离开目标态,重放即被拒。
+export const STATE_VERIFIED_ACTIONS = Object.freeze(["issue-close", "pr-merge"]);
+
+function actionTargetNumber(action, command) {
+  const pattern = action === "issue-close"
+    ? /\bgh\s+issue\s+close\s+(\d+)/
+    : /\bgh\s+pr\s+merge\s+(\d+)/;
+  const match = String(command ?? "").match(pattern);
+  return match ? Number(match[1]) : null;
+}
+
+export function verifyStateAuthorization(root, { action, cwd, command }) {
+  if (!STATE_VERIFIED_ACTIONS.includes(action)) {
+    throw new Error(`${action} always requires a single-use CMDB authorization token`);
+  }
+  if (!cwd || !command) throw new Error("State verification requires command context");
+  const number = actionTargetNumber(action, command);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`State-verified ${action} requires the target number in the command`);
+  }
+  const items = Object.values(readStore(root, { allowMissing: false }).items);
+  const matches = items.filter((item) => (
+    action === "issue-close" ? item.issue_number === number : item.pr_number === number
+  ));
+  if (matches.length !== 1) {
+    throw new Error(`State verification requires exactly one Work Item for ${action} target ${number}`);
+  }
+  const item = matches[0];
+  assertActionState(item, action);
+  assertExecutionScope(root, item, action, cwd, command);
+  return item;
 }

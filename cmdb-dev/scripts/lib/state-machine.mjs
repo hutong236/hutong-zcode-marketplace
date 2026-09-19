@@ -260,9 +260,9 @@ function targetFor(item, event, payload) {
   }
   if (event === "checks_passed") {
     if (item.status !== "pr_checking") throw new Error("checks_passed requires pr_checking");
-    const needsHumanMerge = item.risk_level === "high"
-      || payload.patch?.merge_guard_mode === "control_plane_verified";
-    return needsHumanMerge ? "waiting_human_merge" : "merging";
+    // Gate B 只由高风险触发;控制面守卫的低/中风险依赖已核验的补偿控制
+    // (全部上报检查成功 + 精确 Head SHA + --match-head-commit)自动合并
+    return item.risk_level === "high" ? "waiting_human_merge" : "merging";
   }
   const target = STATIC_TRANSITIONS[item.status]?.[event];
   if (!target) throw new Error(`Invalid transition: ${item.status} --${event}--> ?`);

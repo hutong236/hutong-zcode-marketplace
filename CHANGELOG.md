@@ -5,6 +5,55 @@ Versioning.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-20
+
+### Added
+
+- Gate B is now tiered by risk in both merge-guard modes: only `risk_level:
+  high` stops at `waiting_human_merge`. Previously every
+  control-plane-guarded private repository (GitHub Free without paid branch
+  protection) forced ALL risk levels through human Gate B, making it a fixed
+  per-item stop on those repositories. Low/medium-risk control-plane merges
+  now complete automatically under the unchanged compensating controls —
+  every reported PR check must succeed, the PR head SHA is persisted and
+  pinned, and the merge command must carry `--match-head-commit`. High risk
+  and manual override paths are unchanged.
+- Issue close and PR merge no longer require a one-use `cmdb_authorize`
+  token: the PreToolUse guard state-verifies them directly
+  (`verifyStateAuthorization` reuses the exact `assertActionState` +
+  `assertExecutionScope` checks token consumption performed). An item can
+  only sit in `waiting_close`/`merging` after the state machine has verified
+  all evidence, so the current state itself is the authorization, and the
+  exemption is replay-proof (a successful operation moves the state on).
+  Push and tag operations keep their explicit one-use tokens; per-item token
+  ceremony drops from 3-4 calls to 1-2. Guard-contract violations were 96 of
+  218 recorded errors, so every removed token round-trip also removes an
+  error surface.
+- Marketplace validation now locks the plugin version across all seven
+  places it must appear (the three JSON files plus the README plugin table,
+  the workflow spec header, the SKILL frontmatter, and the current CHANGELOG
+  heading) and adds drift sentinels requiring the default delivery policy
+  tokens (`delivery_required: false`, `skip_allowed: true`) in README,
+  INSTALL, the workflow spec, and the SKILL. Two historical release-fix
+  commits were caused by manual version sync misses.
+- `CONTRIBUTING.md` now records the repository's development conventions
+  (direct-to-main commits with Chinese conventional commits and `(VX.Y.Z)`
+  suffix, the seven-place version lock, CHANGELOG requirements, pre-push
+  checks, and the push-to-publish release channel) that previously lived
+  only in `.zcode/plans/` session notes.
+
+### Changed
+
+- `VALIDATION.md` was rewritten to match reality (8 commands, 12 MCP tools,
+  correct repository name `hutong-zcode-marketplace`) and now describes what
+  validation actually verifies, including the new version-lock and
+  policy-sentinel checks.
+- Documentation synced with both behavior changes across the SKILL, the four
+  affected commands, `BRANCH_PROTECTION.md`, `V2_ARCHITECTURE.md`, the
+  workflow spec, README, and INSTALL; the duplicated batched-release
+  mechanics in INSTALL now point at the workflow spec's Gate C section
+  instead of restating it.
+
 ## [2.4.3] - 2026-09-18
 
 ### Added

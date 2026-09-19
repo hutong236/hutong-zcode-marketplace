@@ -159,9 +159,9 @@ test("checks_passed requires persisted merge-guard evidence", () => {
   assert.equal(checked.required_checks_enforced, true);
 });
 
-test("private-repository control-plane checks always stop at human Gate B", () => {
+test("control-plane checks auto-merge at low/medium risk", () => {
   const item = {
-    ...runtimeItem(),
+    ...runtimeItem({ risk_level: "medium" }),
     status: "pr_checking",
     human_approval: "approved",
     tester_result: "passed",
@@ -173,8 +173,32 @@ test("private-repository control-plane checks always stop at human Gate B", () =
     merge_guard_mode: "control_plane_verified",
     required_checks_enforced: false,
   });
-  assert.equal(checked.status, "waiting_human_merge");
+  assert.equal(checked.status, "merging");
   assert.equal(checked.merge_guard_mode, "control_plane_verified");
+  assert.equal(checked.next_action, "merge_pr");
+});
+
+test("high-risk checks stop at human Gate B under either guard mode", () => {
+  const base = {
+    status: "pr_checking",
+    human_approval: "approved",
+    tester_result: "passed",
+    reviewer_result: "approved",
+    pr_number: 42,
+  };
+  const githubHigh = move(
+    { ...runtimeItem({ risk_level: "high" }), ...base },
+    "checks_passed",
+    githubGuard,
+  );
+  assert.equal(githubHigh.status, "waiting_human_merge");
+  assert.equal(githubHigh.next_action, "human_merge_approval");
+  const controlPlaneHigh = move(
+    { ...runtimeItem({ risk_level: "high" }), ...base },
+    "checks_passed",
+    { ...githubGuard, merge_guard_mode: "control_plane_verified", required_checks_enforced: false },
+  );
+  assert.equal(controlPlaneHigh.status, "waiting_human_merge");
 });
 
 test("planning requires an isolated branch and worktree", () => {

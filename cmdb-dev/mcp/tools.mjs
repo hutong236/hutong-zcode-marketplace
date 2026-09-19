@@ -97,7 +97,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: "cmdb_authorize",
-    description: "Primary-Agent-only issuance of a state-bound, short-lived, single-use token for one protected operation.",
+    description: "Primary-Agent-only issuance of a state-bound, short-lived, single-use token. Required for git push and git tag mutations; PR merge and Issue close are state-verified by the guard and need no token.",
     inputSchema: objectSchema({
       id, action: { enum: ["git-push", "git-tag", "pr-merge", "issue-close"] },
       actor: { const: "orchestrator" }, ttl_seconds: { type: "integer", minimum: 10, maximum: 600 },

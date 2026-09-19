@@ -1,8 +1,8 @@
 # CMDB 项目：ZCode AI 研发流水线规范
 
-**版本：** V2.4.3
+**版本：** V2.5.0
 
-**日期：** 2026-09-15
+**日期：** 2026-09-20
 
 **适用范围：** CMDB 项目研发
 
@@ -84,7 +84,9 @@ Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并
 ```
 
 Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓库统一使用
-控制面校验，并且所有风险等级都必须经过 Gate B。
+控制面校验,且 Gate B 按风险分级,与公开仓库一致:低/中风险在控制面
+补偿控制(全部上报检查成功 + 固定 PR Head SHA + `--match-head-commit`)
+下自动合并,高风险仍必须经过 Gate B。
 
 ### Gate C:Tag / 镜像交付
 
@@ -126,8 +128,8 @@ stateDiagram-v2
   review --> pr_open: review_approved
   pr_open --> pr_checking: pr_created
   pr_checking --> doing: checks_failed
-  pr_checking --> merging: GitHub enforced + low/medium
-  pr_checking --> waiting_human_merge: high or control-plane guard
+  pr_checking --> merging: low/medium risk
+  pr_checking --> waiting_human_merge: high risk
   waiting_human_merge --> merging: approve_merge
   merging --> waiting_tag_confirm: pr_merged
   waiting_tag_confirm --> building: approve_tag
@@ -159,8 +161,13 @@ Coder、Tester、Reviewer 必须验证收到的路径，只在该 worktree 工�
 - `gh pr merge`；
 - `gh issue close`。
 
-Primary Agent 在操作前调用 `cmdb_authorize`，令牌绑定 Work Item、状态修订、
-动作和过期时间，只能使用一次。每个 Bash 调用只允许一种受保护动作。
+`git push` 与 git tag 创建/修改/删除在操作前调用 `cmdb_authorize`，令牌绑定
+Work Item、状态修订、动作和过期时间，只能使用一次。`gh pr merge` 与
+`gh issue close` 由 guard 按当前状态自证放行——merge 要求条目处于
+`merging` 态、命令点名 PR 号并固定已核验的 PR Head SHA,close 要求条目
+处于 `waiting_close` 态、命令点名 Issue 号——状态机到达这两个状态前已
+完成全部证据校验,操作成功后状态即离开,重放被拒。每个 Bash 调用只允许
+一种受保护动作。
 
 ## 7. PR 质量门
 
@@ -175,11 +182,14 @@ PR Body 使用 `Refs #<issue>`，不得使用 `Closes` / `Fixes`，避免合并�
 
 合并守卫有两种：
 
-1. `github_required_checks`：公开仓库或付费计划由 GitHub 服务端强制，
-   低/中风险可以自动合并；
+1. `github_required_checks`：公开仓库或付费计划由 GitHub 服务端强制
+   必需检查；
 2. `control_plane_verified`：GitHub Free 私有仓库由
-   `cmdb_verify_pr_checks` 核对成功检查和精确 Head SHA，所有风险等级停在
-   Gate B，合并命令必须携带 `--match-head-commit <SHA>`。
+   `cmdb_verify_pr_checks` 核对成功检查和精确 Head SHA，并要求 PR 上
+   全部上报检查成功。
+
+两种守卫下 Gate B 规则一致：低/中风险自动合并，高风险停在 Gate B；
+合并命令必须携带 `--match-head-commit <SHA>`。
 
 第二种模式保护通过插件执行的合并，但无法阻止管理员在 GitHub 页面手工
 绕过。需要服务端不可绕过保证时仍需 GitHub 付费分支保护。

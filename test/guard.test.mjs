@@ -11,7 +11,7 @@ import { evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
 
 const EXEMPT_REMOTE = "https://github.com/hutong236/hutong-zcode-marketplace.git";
 
-function managedRepository({ allowlist } = {}) {
+function managedRepository({ allowlist, overrides = {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-guard-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
   const item = { ...createWorkItem({
@@ -20,7 +20,7 @@ function managedRepository({ allowlist } = {}) {
     title: "Hook state",
     risk_level: "low",
     delivery_required: true,
-  }), status: "doing" };
+  }), status: "doing", ...overrides };
   writeStore(root, { schema_version: 2, repository: "acme/cmdb", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
   if (allowlist) {
     fs.mkdirSync(path.join(root, ".cmdb-dev"), { recursive: true });
@@ -110,4 +110,71 @@ test("tag message bodies no longer trip the one-action rule", () => {
   const result = evaluateCommand({ cwd: root, command: 'git tag -a v1.0.0 -m "match upstream push"' });
   assert.equal(result.allowed, false);
   assert.match(result.reason, /git-tag requires a single-use CMDB authorization token/);
+});
+
+const mergeGuardEvidence = {
+  reviewer_result: "approved",
+  pr_checks: "passed",
+  pr_check_name: "CMDB PR Checks / verify",
+  pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+  pr_head_sha: "a".repeat(40),
+  merge_guard_mode: "control_plane_verified",
+  required_checks_enforced: false,
+  pr_number: 66,
+};
+
+test("issue close without a token is state-verified from waiting_close", () => {
+  const root = managedRepository({ overrides: { status: "waiting_close" } });
+  const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 --repo acme/cmdb --comment "Done"' });
+  assert.equal(result.allowed, true);
+  assert.match(result.reason, /State-verified issue-close for REQ-66/);
+});
+
+test("issue close state verification rejects unknown numbers and wrong states", () => {
+  const root = managedRepository({ overrides: { status: "waiting_close" } });
+  assert.match(
+    evaluateCommand({ cwd: root, command: "gh issue close 999" }).reason,
+    /exactly one Work Item/,
+  );
+  const midFlight = managedRepository();
+  assert.match(
+    evaluateCommand({ cwd: midFlight, command: "gh issue close 66" }).reason,
+    /forbidden while REQ-66 is doing/,
+  );
+});
+
+test("pr merge without a token is state-verified from merging with the pinned head SHA", () => {
+  const root = managedRepository({ overrides: { status: "merging", ...mergeGuardEvidence } });
+  const command = `gh pr merge 66 --squash --match-head-commit ${"a".repeat(40)}`;
+  const result = evaluateCommand({ cwd: root, command });
+  assert.equal(result.allowed, true);
+  assert.match(result.reason, /State-verified pr-merge for REQ-66/);
+});
+
+test("pr merge state verification rejects mismatched numbers, SHAs, and states", () => {
+  const root = managedRepository({ overrides: { status: "merging", ...mergeGuardEvidence } });
+  assert.match(
+    evaluateCommand({ cwd: root, command: "gh pr merge 999 --squash" }).reason,
+    /exactly one Work Item/,
+  );
+  assert.match(
+    evaluateCommand({ cwd: root, command: `gh pr merge 66 --squash --match-head-commit ${"b".repeat(40)}` }).reason,
+    /pin verified head SHA/,
+  );
+  const unverified = managedRepository({ overrides: { status: "doing", ...mergeGuardEvidence } });
+  assert.match(
+    evaluateCommand({ cwd: root, command: "gh pr merge 66 --squash" }).reason,
+    /pin verified head SHA/,
+  );
+  assert.match(
+    evaluateCommand({ cwd: unverified, command: `gh pr merge 66 --squash --match-head-commit ${"a".repeat(40)}` }).reason,
+    /forbidden while REQ-66 is doing/,
+  );
+});
+
+test("state-verified operations still respect the one-operation rule", () => {
+  const root = managedRepository({ overrides: { status: "waiting_close" } });
+  const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 && git push origin main' });
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /exactly one protected operation/);
 });

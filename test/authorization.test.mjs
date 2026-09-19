@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { issueAuthorization, consumeAuthorization } from "../cmdb-dev/scripts/lib/authorization.mjs";
+import { issueAuthorization, consumeAuthorization, verifyStateAuthorization } from "../cmdb-dev/scripts/lib/authorization.mjs";
 import { createWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
 import { writeStore } from "../cmdb-dev/scripts/lib/state-store.mjs";
 import { analyzeCommand, evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
@@ -103,4 +103,63 @@ test("guard classifies protected shell operations", () => {
   assert.deepEqual(analyzeCommand("gh issue close 25"), ["issue-close"]);
   const { root } = repositoryWithItem("waiting_close");
   assert.match(evaluateCommand({ cwd: root, command: "cd /tmp && git push origin main" }).reason, /working directory directly/);
+});
+
+test("state verification authorizes issue close and pr merge without a token", () => {
+  const { root } = repositoryWithItem("waiting_close");
+  const item = verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: 'gh issue close 25 --repo acme/cmdb --comment "Done"',
+  });
+  assert.equal(item.id, "REQ-25");
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: "gh issue close 999",
+  }), /exactly one Work Item/);
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: "gh issue edit 25",
+  }), /requires the target number/);
+});
+
+test("state verification never covers push or tag operations", () => {
+  const { root } = repositoryWithItem("waiting_close");
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "git-push",
+    cwd: root,
+    command: "git push origin main",
+  }), /always requires a single-use CMDB authorization token/);
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "git-tag",
+    cwd: root,
+    command: "git tag -a v1.0.0 -m release",
+  }), /always requires a single-use CMDB authorization token/);
+});
+
+test("state-verified pr merge enforces the same pinned head SHA as tokens", () => {
+  const sha = "a".repeat(40);
+  const { root } = repositoryWithItem("merging", {
+    pr_number: 42,
+    reviewer_result: "approved",
+    pr_checks: "passed",
+    pr_check_name: "CMDB PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+    pr_head_sha: sha,
+    merge_guard_mode: "control_plane_verified",
+    required_checks_enforced: false,
+  });
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "pr-merge",
+    cwd: root,
+    command: "gh pr merge 42 --squash",
+  }), /pin verified head SHA/);
+  const item = verifyStateAuthorization(root, {
+    action: "pr-merge",
+    cwd: root,
+    command: `gh pr merge 42 --squash --match-head-commit ${sha}`,
+  });
+  assert.equal(item.id, "REQ-25");
 });

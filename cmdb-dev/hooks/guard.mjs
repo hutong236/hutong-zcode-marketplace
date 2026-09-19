@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { consumeAuthorization } from "../scripts/lib/authorization.mjs";
+import { consumeAuthorization, verifyStateAuthorization } from "../scripts/lib/authorization.mjs";
 import { findControlRoot, storePath } from "../scripts/lib/state-store.mjs";
 
 function shellSegments(command) {
@@ -132,7 +132,19 @@ export function evaluateCommand({ cwd, command, token }) {
   if (/(?:^|[;&|]\s*)cd\s+|\bgit\s+(?:--git-dir|--work-tree|-C)\b/.test(stripMessageBodies(command))) {
     return { allowed: false, reason: "Set the Bash tool working directory directly; protected calls may not change or override repository paths" };
   }
-  if (!token) return { allowed: false, reason: `${actions[0]} requires a single-use CMDB authorization token` };
+  if (!token) {
+    // issue-close / pr-merge 允许无令牌状态自证:waiting_close / merging 状态
+    // 本身就是已完成证据校验的授权,校验逻辑与令牌消费共用同一套
+    if (actions[0] === "issue-close" || actions[0] === "pr-merge") {
+      try {
+        const item = verifyStateAuthorization(root, { action: actions[0], cwd, command });
+        return { allowed: true, reason: `State-verified ${actions[0]} for ${item.id}` };
+      } catch (error) {
+        return { allowed: false, reason: error.message };
+      }
+    }
+    return { allowed: false, reason: `${actions[0]} requires a single-use CMDB authorization token` };
+  }
 
   try {
     const authorization = consumeAuthorization(root, { token, action: actions[0], cwd, command });
