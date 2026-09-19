@@ -58,13 +58,13 @@ function syncText(relativePath, pattern, build, label = "") {
 
 // 三处 JSON
 syncJson("marketplace.json",
-  (parsed) => parsed.plugins?.find((plugin) => plugin.name === "cmdb-dev")?.version,
+  (parsed) => parsed.plugins?.find((plugin) => plugin.name === "hulane")?.version,
   (parsed, value) => {
-    const entry = parsed.plugins?.find((plugin) => plugin.name === "cmdb-dev");
-    if (!entry) fail("marketplace.json 中找不到 cmdb-dev 插件条目");
+    const entry = parsed.plugins?.find((plugin) => plugin.name === "hulane");
+    if (!entry) fail("marketplace.json 中找不到 hulane 插件条目");
     entry.version = value;
   });
-syncJson("cmdb-dev/.zcode-plugin/plugin.json",
+syncJson("hulane/.zcode-plugin/plugin.json",
   (parsed) => parsed.version,
   (parsed, value) => { parsed.version = value; });
 syncJson("package.json",
@@ -73,16 +73,16 @@ syncJson("package.json",
 
 // README 插件表版本列
 syncText("README.md",
-  /^(\|\s*`cmdb-dev`\s*\|\s*)[^|\s]+/m,
+  /^(\|\s*`hulane`\s*\|\s*)[^|\s]+/m,
   (match, groups) => `${groups[0]}${version}`);
 
 // 流程规范文档头:版本必同步;日期仅当 CHANGELOG 标题带了日期才同步
-syncText("CMDB_ZCode_AI_Dev_Workflow.md",
+syncText("Hulane_ZCode_AI_Dev_Workflow.md",
   /^(\*\*版本：\*\*\s*)V[^\s]+/m,
   (match, groups) => `${groups[0]}V${version}`,
   "版本");
 if (releaseDate) {
-  syncText("CMDB_ZCode_AI_Dev_Workflow.md",
+  syncText("Hulane_ZCode_AI_Dev_Workflow.md",
     /^(\*\*日期：\*\*\s*)\d{4}-\d{2}-\d{2}/m,
     (match, groups) => `${groups[0]}${releaseDate}`,
     "日期");
@@ -90,7 +90,7 @@ if (releaseDate) {
 
 // SKILL frontmatter 的 metadata.version(只在 frontmatter 块内替换)
 {
-  const relativePath = "cmdb-dev/skills/cmdb-development/SKILL.md";
+  const relativePath = "hulane/skills/hulane-development/SKILL.md";
   const original = read(relativePath);
   const frontmatterPattern = /^---\r?\n([\s\S]*?)\r?\n---/;
   const match = original.match(frontmatterPattern);

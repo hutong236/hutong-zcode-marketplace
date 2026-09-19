@@ -4,13 +4,13 @@
 
 - 本仓库(插件市场)的改动按近期先例直连 `main`:中文 conventional
   commit,插件改动标题带版本号后缀,如
-  `feat(cmdb-dev): Gate B 分级,控制面低/中风险自动合并 (V2.5.0)`。
-- 插件管理的是真实 CMDB 项目仓库的开发流程;在那里的开发走 `/cmdb_dev`
+  `feat(hulane): Gate B 分级,控制面低/中风险自动合并 (V2.5.0)`。
+- 插件管理的是真实 Hulane 项目仓库的开发流程;在那里的开发走 `/hulane_dev`
   V2 流程(立项 → Gate A → worktree → 编码/测试/评审 → PR → 合并 →
   Gate C),与本仓库自身的提交方式无关。
 - 发布 = push `main` 即发布:ZCode 按 commit 跟踪插件更新,无需打 tag 或
   构建产物。插件镜像按需批量发版,完整规则见
-  [CMDB_ZCode_AI_Dev_Workflow.md](CMDB_ZCode_AI_Dev_Workflow.md) 的 Gate C 一节。
+  [Hulane_ZCode_AI_Dev_Workflow.md](Hulane_ZCode_AI_Dev_Workflow.md) 的 Gate C 一节。
 
 ## 版本与变更记录
 

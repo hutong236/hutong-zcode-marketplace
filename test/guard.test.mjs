@@ -5,14 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
-import { writeStore } from "../cmdb-dev/scripts/lib/state-store.mjs";
-import { evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
+import { createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
+import { writeStore } from "../hulane/scripts/lib/state-store.mjs";
+import { evaluateCommand } from "../hulane/hooks/guard.mjs";
 
 const EXEMPT_REMOTE = "https://github.com/hutong236/hutong-zcode-marketplace.git";
 
 function managedRepository({ allowlist, overrides = {} } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-guard-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-guard-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
   const item = { ...createWorkItem({
     id: "REQ-66",
@@ -21,10 +21,10 @@ function managedRepository({ allowlist, overrides = {} } = {}) {
     risk_level: "low",
     delivery_required: true,
   }), status: "doing", ...overrides };
-  writeStore(root, { schema_version: 2, repository: "acme/cmdb", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
+  writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
   if (allowlist) {
-    fs.mkdirSync(path.join(root, ".cmdb-dev"), { recursive: true });
-    fs.writeFileSync(path.join(root, ".cmdb-dev", "guard-allowlist.json"), JSON.stringify(allowlist));
+    fs.mkdirSync(path.join(root, ".hulane"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".hulane", "guard-allowlist.json"), JSON.stringify(allowlist));
   }
   return root;
 }
@@ -41,15 +41,15 @@ test("bare git push still requires a single-use token", () => {
   const root = managedRepository({ allowlist: ["hutong236/hutong-zcode-marketplace"] });
   const result = evaluateCommand({ cwd: root, command: "git push" });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /requires a single-use Hulane authorization token/);
 });
 
 test("push to a remote outside the allowlist still requires a single-use token", () => {
   const root = managedRepository({ allowlist: ["hutong236/hutong-zcode-marketplace"] });
-  const command = "git push https://github.com/hutong236/hutong-project-cmdb.git main";
+  const command = "git push https://github.com/hutong236/hutong-project-demo.git main";
   const result = evaluateCommand({ cwd: root, command });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /requires a single-use Hulane authorization token/);
 });
 
 test("missing allowlist file fails closed for explicit remote pushes", () => {
@@ -57,14 +57,14 @@ test("missing allowlist file fails closed for explicit remote pushes", () => {
   const command = `git push ${EXEMPT_REMOTE} main`;
   const result = evaluateCommand({ cwd: root, command });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /requires a single-use Hulane authorization token/);
 });
 
 test("allowlist never exempts git tag or merge operations", () => {
   const root = managedRepository({ allowlist: ["hutong236/hutong-zcode-marketplace"] });
   const tagResult = evaluateCommand({ cwd: root, command: "git tag -a v1.0.0 -m msg" });
   assert.equal(tagResult.allowed, false);
-  assert.match(tagResult.reason, /git-tag requires a single-use CMDB authorization token/);
+  assert.match(tagResult.reason, /git-tag requires a single-use Hulane authorization token/);
 });
 
 test("ascii push/tag words inside a quoted commit message are not protected operations", () => {
@@ -95,28 +95,28 @@ test("a commit message cannot feed the push allowlist for a following bare push"
   const command = `git commit -m "git push ${EXEMPT_REMOTE} main" && git push`;
   const result = evaluateCommand({ cwd: root, command });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /requires a single-use Hulane authorization token/);
 });
 
 test("command substitution inside a commit message stays visible to the guard", () => {
   const root = managedRepository();
   const result = evaluateCommand({ cwd: root, command: 'git commit -m "$(git push origin main)"' });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /requires a single-use Hulane authorization token/);
 });
 
 test("tag message bodies no longer trip the one-action rule", () => {
   const root = managedRepository();
   const result = evaluateCommand({ cwd: root, command: 'git tag -a v1.0.0 -m "match upstream push"' });
   assert.equal(result.allowed, false);
-  assert.match(result.reason, /git-tag requires a single-use CMDB authorization token/);
+  assert.match(result.reason, /git-tag requires a single-use Hulane authorization token/);
 });
 
 const mergeGuardEvidence = {
   reviewer_result: "approved",
   pr_checks: "passed",
-  pr_check_name: "CMDB PR Checks / verify",
-  pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+  pr_check_name: "Hulane PR Checks / verify",
+  pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
   pr_head_sha: "a".repeat(40),
   merge_guard_mode: "control_plane_verified",
   required_checks_enforced: false,
@@ -125,7 +125,7 @@ const mergeGuardEvidence = {
 
 test("issue close without a token is state-verified from waiting_close", () => {
   const root = managedRepository({ overrides: { status: "waiting_close" } });
-  const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 --repo acme/cmdb --comment "Done"' });
+  const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 --repo acme/demo --comment "Done"' });
   assert.equal(result.allowed, true);
   assert.match(result.reason, /State-verified issue-close for REQ-66/);
 });

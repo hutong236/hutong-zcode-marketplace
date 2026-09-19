@@ -1,0 +1,6 @@
+---
+description: Analyze a new Hulane feature or bug, open the GitHub Issue, create local projection, and stop for human approval before coding.
+argument-hint: "<natural-language feature or bug>"
+skills: hulane-development
+---
+Act as Primary Agent Orchestrator. Request: $ARGUMENTS. Call `hulane_preflight`; then classify the intake size. A small change (pure frontend/UI or docs, few expected files, no schema/API/auth/data-path change, risk low) skips the planner dispatch: write classification, risk, delivery policy, summary, and acceptance criteria inline and pass `size: "small"`; anything else dispatches read-only `hulane-planner` with `size: "standard"`. Pass the classification to `hulane_open_work_item`. That MCP tool must create the GitHub Issue before deriving REQ/BUG state and projection. Default delivery policy is delivery_required false and skip_allowed true (on-demand batched releases); use delivery_required true and skip_allowed false only when the user explicitly asks to release an image with this item. Verify the returned state is waiting_approval, then STOP. Do not create a branch, edit business code, invoke Coder, create PR, or merge. End with Work Item ID, Issue, Planner summary, Risk, Size, Delivery Policy, Acceptance Criteria, and `/hulane_approve <ID>`.

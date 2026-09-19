@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
-import { writeProjection } from "../cmdb-dev/scripts/lib/projection.mjs";
+import { createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
+import { writeProjection } from "../hulane/scripts/lib/projection.mjs";
 
 test("projection refresh updates frontmatter without replacing the note body", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-projection-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-projection-"));
   const item = createWorkItem({
     id: "REQ-55",
     issue_number: 55,

@@ -1,23 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEvent, createWorkItem, validateWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, validateWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
 
 const sha = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
 const githubGuard = {
-  pr_check_name: "CMDB PR Checks / verify",
-  pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+  pr_check_name: "Hulane PR Checks / verify",
+  pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
   pr_head_sha: sha,
   merge_guard_mode: "github_required_checks",
   required_checks_enforced: true,
 };
 const deliveryPatch = {
-  image: "ghcr.io/acme/cmdb",
+  image: "ghcr.io/acme/demo",
   image_tag: "v1.4.0",
   image_digest: digest,
-  workflow_run_url: "https://github.com/acme/cmdb/actions/runs/123",
+  workflow_run_url: "https://github.com/acme/demo/actions/runs/123",
   registry_verified: true,
-  release_url: "https://github.com/acme/cmdb/releases/tag/v1.4.0",
+  release_url: "https://github.com/acme/demo/releases/tag/v1.4.0",
   sbom_status: "verified",
   provenance_status: "verified",
   sbom_digest: `sha256:${"c".repeat(64)}`,
@@ -204,14 +204,14 @@ test("high-risk checks stop at human Gate B under either guard mode", () => {
 test("planning requires an isolated branch and worktree", () => {
   let item = move(runtimeItem(), "approve_requirement", {}, "human:owner");
   assert.throws(() => move(item, "start_planning"), /requires branch/);
-  item = move(item, "start_planning", { branch: "cmdb/req-12", worktree_path: "/repo/.cmdb-dev/worktrees/REQ-12" });
+  item = move(item, "start_planning", { branch: "hulane/req-12", worktree_path: "/repo/.hulane/worktrees/REQ-12" });
   assert.equal(item.status, "planning");
-  assert.equal(item.branch, "cmdb/req-12");
+  assert.equal(item.branch, "hulane/req-12");
 });
 
 test("fourth rework failure blocks and human resume resets the budget", () => {
   let item = move(runtimeItem(), "approve_requirement", {}, "human:owner");
-  item = move(item, "start_planning", { branch: "cmdb/req-12", worktree_path: "/repo/.cmdb-dev/worktrees/REQ-12" });
+  item = move(item, "start_planning", { branch: "hulane/req-12", worktree_path: "/repo/.hulane/worktrees/REQ-12" });
   item = move(item, "plan_complete");
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     item = move(item, "code_complete");

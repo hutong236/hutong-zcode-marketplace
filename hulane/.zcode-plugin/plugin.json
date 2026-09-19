@@ -1,0 +1,22 @@
+{
+  "name": "hulane",
+  "version": "3.0.0",
+  "description": "Hulane AI dev workflow: Issue -> Branch -> Coder -> Tester -> Reviewer -> PR -> Actions -> Docker image.",
+  "author": {
+    "name": "hutong236",
+    "url": "https://github.com/hutong236"
+  },
+  "homepage": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "repository": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "hulane",
+    "github",
+    "docker",
+    "multi-agent"
+  ],
+  "commands": "commands",
+  "skills": "skills",
+  "agents": "agents",
+  "mcpServers": ".mcp.json"
+}

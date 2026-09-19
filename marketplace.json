@@ -1,15 +1,15 @@
 {
-  "name": "cmdb-dev-marketplace",
-  "description": "Local ZCode marketplace for the CMDB AI development pipeline.",
+  "name": "hulane-marketplace",
+  "description": "Local ZCode marketplace for the Hulane AI development pipeline.",
   "plugins": [
     {
-      "name": "cmdb-dev",
-      "source": "./cmdb-dev",
-      "description": "CMDB Issue-to-code-to-test-to-PR-to-Docker-image AI workflow.",
-      "version": "2.5.0",
+      "name": "hulane",
+      "source": "./hulane",
+      "description": "Hulane Issue-to-code-to-test-to-PR-to-Docker-image AI workflow.",
+      "version": "3.0.0",
       "category": "development",
       "tags": [
-        "cmdb",
+        "hulane",
         "github",
         "docker",
         "multi-agent"

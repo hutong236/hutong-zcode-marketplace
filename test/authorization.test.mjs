@@ -4,16 +4,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { issueAuthorization, consumeAuthorization, verifyStateAuthorization } from "../cmdb-dev/scripts/lib/authorization.mjs";
-import { createWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
-import { writeStore } from "../cmdb-dev/scripts/lib/state-store.mjs";
-import { analyzeCommand, evaluateCommand } from "../cmdb-dev/hooks/guard.mjs";
+import { issueAuthorization, consumeAuthorization, verifyStateAuthorization } from "../hulane/scripts/lib/authorization.mjs";
+import { createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
+import { writeStore } from "../hulane/scripts/lib/state-store.mjs";
+import { analyzeCommand, evaluateCommand } from "../hulane/hooks/guard.mjs";
 
 const clock = () => new Date("2026-08-31T12:00:00Z");
 
 function repositoryWithItem(status, overrides = {}) {
   // git 输出真实路径,macOS 的 /var 软链需先解析才能与夹具路径一致
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-auth-")));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-auth-")));
   execFileSync("git", ["init", "-q"], { cwd: root });
   const item = { ...createWorkItem({
     id: "REQ-25",
@@ -22,7 +22,7 @@ function repositoryWithItem(status, overrides = {}) {
     risk_level: "low",
     delivery_required: true,
   }, clock), status, ...overrides };
-  writeStore(root, { schema_version: 2, repository: "acme/cmdb", revision: 0, updated_at: clock().toISOString(), items: { [item.id]: item } });
+  writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: clock().toISOString(), items: { [item.id]: item } });
   return { root, item };
 }
 
@@ -38,14 +38,14 @@ test("execution authorizations are state-bound and single-use", () => {
     token: authorization.token,
     action: "issue-close",
     cwd: root,
-    command: `CMDB_AUTH_TOKEN=${authorization.token} gh issue close 25`,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25`,
   }, clock);
   assert.equal(consumed.work_item, "REQ-25");
   assert.throws(() => consumeAuthorization(root, {
     token: authorization.token,
     action: "issue-close",
     cwd: root,
-    command: `CMDB_AUTH_TOKEN=${authorization.token} gh issue close 25`,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25`,
   }, clock), /already been used/);
 });
 
@@ -59,7 +59,7 @@ test("authorization rejects the wrong lifecycle state and non-orchestrators", ()
   assert.throws(() => issueAuthorization(root, {
     id: "REQ-25",
     action: "git-push",
-    actor: "cmdb-coder",
+    actor: "hulane-coder",
   }, clock), /Primary Agent/);
 });
 
@@ -69,8 +69,8 @@ test("PR merge authorization pins the control-plane-verified head SHA", () => {
     pr_number: 42,
     reviewer_result: "approved",
     pr_checks: "passed",
-    pr_check_name: "CMDB PR Checks / verify",
-    pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+    pr_check_name: "Hulane PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
     pr_head_sha: sha,
     merge_guard_mode: "control_plane_verified",
     required_checks_enforced: false,
@@ -96,7 +96,7 @@ test("PR merge authorization pins the control-plane-verified head SHA", () => {
 });
 
 test("guard classifies protected shell operations", () => {
-  assert.deepEqual(analyzeCommand("git status && git push origin cmdb/req-25"), ["git-push"]);
+  assert.deepEqual(analyzeCommand("git status && git push origin hulane/req-25"), ["git-push"]);
   assert.deepEqual(analyzeCommand("gh pr merge 42 --squash"), ["pr-merge"]);
   assert.deepEqual(analyzeCommand("git tag --list 'v*'"), []);
   assert.deepEqual(analyzeCommand("git tag -a v2.0.0 -m release"), ["git-tag"]);
@@ -110,7 +110,7 @@ test("state verification authorizes issue close and pr merge without a token", (
   const item = verifyStateAuthorization(root, {
     action: "issue-close",
     cwd: root,
-    command: 'gh issue close 25 --repo acme/cmdb --comment "Done"',
+    command: 'gh issue close 25 --repo acme/demo --comment "Done"',
   });
   assert.equal(item.id, "REQ-25");
   assert.throws(() => verifyStateAuthorization(root, {
@@ -131,12 +131,12 @@ test("state verification never covers push or tag operations", () => {
     action: "git-push",
     cwd: root,
     command: "git push origin main",
-  }), /always requires a single-use CMDB authorization token/);
+  }), /always requires a single-use Hulane authorization token/);
   assert.throws(() => verifyStateAuthorization(root, {
     action: "git-tag",
     cwd: root,
     command: "git tag -a v1.0.0 -m release",
-  }), /always requires a single-use CMDB authorization token/);
+  }), /always requires a single-use Hulane authorization token/);
 });
 
 test("state-verified pr merge enforces the same pinned head SHA as tokens", () => {
@@ -145,8 +145,8 @@ test("state-verified pr merge enforces the same pinned head SHA as tokens", () =
     pr_number: 42,
     reviewer_result: "approved",
     pr_checks: "passed",
-    pr_check_name: "CMDB PR Checks / verify",
-    pr_check_run_url: "https://github.com/acme/cmdb/actions/runs/456",
+    pr_check_name: "Hulane PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
     pr_head_sha: sha,
     merge_guard_mode: "control_plane_verified",
     required_checks_enforced: false,

@@ -1,14 +1,14 @@
 # hutong-zcode-marketplace
 
-CMDB AI 研发流水线的 ZCode 插件市场。仓库根目录即 Marketplace 根目录。
+Hulane AI 研发流水线的 ZCode 插件市场。仓库根目录即 Marketplace 根目录。
 
 ## 插件
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `cmdb-dev` | 2.5.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.0.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 
-组件：8 个 `/cmdb_*` 命令、12 个 `cmdb-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
+组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
 
 ## 在 ZCode 中添加
 
@@ -24,7 +24,7 @@ hutong236/hutong-zcode-marketplace
 git@github.com:hutong236/hutong-zcode-marketplace.git
 ```
 
-添加后在「个人」分类下找到 `cmdb-dev` 插件安装即可。
+添加后在「个人」分类下找到 `hulane` 插件安装即可。
 
 完整步骤见 [INSTALL.md](INSTALL.md)。
 
@@ -44,6 +44,7 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 - 每个 Work Item 使用独立 worktree；push/tag 受保护操作需要一次性授权令牌，merge/close 由 guard 按状态自证放行；自动返工最多 3 轮。
 - 镜像完成必须交叉核对 Actions 元数据、GitHub Release 与 GHCR 摘要，并验证 SBOM/Provenance 证据。
 - Slash Command 只编排；MCP 服务统一执行状态迁移、GitHub 同步、worktree、授权与交付核验。
+- V3 起控制目录为 `.hulane/`；cmdb-dev 2.x 初始化的仓库继续使用 `.cmdb-dev/` 并被自动兼容（guard/状态/授权/worktree 不断档），一次性迁移步骤见 [迁移指南](hulane/docs/MIGRATION_hulane.md)。
 
 ## 更新
 

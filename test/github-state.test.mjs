@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { applyEvent, createWorkItem } from "../cmdb-dev/scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
 import {
   assertRevisionCanSync,
   hydrateItemFromGitHub,
@@ -12,7 +12,7 @@ import {
   serializeGitHubState,
   stateLabel,
   syncItemToGitHub,
-} from "../cmdb-dev/scripts/lib/github-state.mjs";
+} from "../hulane/scripts/lib/github-state.mjs";
 
 test("GitHub state comment round-trips", () => {
   const item = createWorkItem({
@@ -23,7 +23,7 @@ test("GitHub state comment round-trips", () => {
     delivery_required: true,
   });
   assert.deepEqual(parseGitHubState(serializeGitHubState(item)), item);
-  assert.equal(stateLabel("waiting_tag_confirm"), "cmdb:waiting-tag-confirm");
+  assert.equal(stateLabel("waiting_tag_confirm"), "hulane:waiting-tag-confirm");
 });
 
 test("unmanaged comment is ignored", () => {
@@ -79,12 +79,12 @@ test("historical Done remains readable without fabricating V2 evidence", () => {
 });
 
 function temporaryRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-github-state-"));
+  return fs.mkdtempSync(path.join(os.tmpdir(), "hulane-github-state-"));
 }
 
 function seedMeta(root, itemId, entry) {
-  fs.mkdirSync(path.join(root, ".cmdb-dev"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".cmdb-dev", "github-meta.json"), `${JSON.stringify({ [itemId]: entry }, null, 2)}\n`);
+  fs.mkdirSync(path.join(root, ".hulane"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".hulane", "github-meta.json"), `${JSON.stringify({ [itemId]: entry }, null, 2)}\n`);
 }
 
 function fakeRun(handlers) {
@@ -123,17 +123,17 @@ test("first sync takes the full path, posts the comment, and records meta", () =
 
   const result = syncItemToGitHub(item, { repository: "org/first-sync", cwd: root, run });
 
-  assert.equal(result.label, "cmdb:waiting-approval");
-  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "cmdb:waiting-approval" });
+  assert.equal(result.label, "hulane:waiting-approval");
+  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "hulane:waiting-approval" });
   assert.ok(calls.some((args) => isMethod(args, "POST")));
-  assert.ok(calls.some((args) => isIssueEdit(args) && args.includes("--add-label", "cmdb:waiting-approval")));
+  assert.ok(calls.some((args) => isIssueEdit(args) && args.includes("--add-label", "hulane:waiting-approval")));
 });
 
 test("second sync uses the fast path with exactly the label edit and comment PATCH", () => {
   const root = temporaryRoot();
   const item = createWorkItem({ id: "REQ-22", issue_number: 22, title: "Fast path", risk_level: "low", delivery_required: true });
   const ready = applyEvent(item, "approve_requirement", { actor: "human:tester", evidence: "approved" });
-  seedMeta(root, ready.id, { comment_id: 424242, state_label: "cmdb:waiting-approval" });
+  seedMeta(root, ready.id, { comment_id: 424242, state_label: "hulane:waiting-approval" });
   const { calls, run } = fakeRun([
     (args) => (isLabelCreate(args) ? "" : undefined),
     (args) => (isIssueEdit(args) ? "" : undefined),
@@ -143,10 +143,10 @@ test("second sync uses the fast path with exactly the label edit and comment PAT
 
   syncItemToGitHub(ready, { repository: "org/fast-path", cwd: root, run });
 
-  assert.deepEqual(readGithubMeta(root)[ready.id], { comment_id: 424242, state_label: "cmdb:ready" });
+  assert.deepEqual(readGithubMeta(root)[ready.id], { comment_id: 424242, state_label: "hulane:ready" });
   const mutating = calls.filter((args) => !isLabelCreate(args));
   assert.equal(mutating.length, 2);
-  assert.ok(mutating.some((args) => isIssueEdit(args) && args.includes("--add-label", "cmdb:ready") && args.includes("--remove-label", "cmdb:waiting-approval")));
+  assert.ok(mutating.some((args) => isIssueEdit(args) && args.includes("--add-label", "hulane:ready") && args.includes("--remove-label", "hulane:waiting-approval")));
   assert.ok(mutating.some((args) => isMethod(args, "PATCH") && args.some((value) => String(value).endsWith("/issues/comments/424242"))));
   assert.ok(!calls.some(isCommentList), "fast path must not list comments");
   assert.ok(!calls.some(isIssueView), "fast path must not read current labels");
@@ -155,7 +155,7 @@ test("second sync uses the fast path with exactly the label edit and comment PAT
 test("fast path skips the label edit when the status label is unchanged", () => {
   const root = temporaryRoot();
   const item = createWorkItem({ id: "REQ-23", issue_number: 23, title: "Same label", risk_level: "low", delivery_required: true });
-  seedMeta(root, item.id, { comment_id: 424242, state_label: "cmdb:waiting-approval" });
+  seedMeta(root, item.id, { comment_id: 424242, state_label: "hulane:waiting-approval" });
   const { calls, run } = fakeRun([
     (args) => (isMethod(args, "PATCH") ? "" : undefined),
     (args) => (isLabelCreate(args) ? "" : undefined),
@@ -163,8 +163,8 @@ test("fast path skips the label edit when the status label is unchanged", () => 
 
   const result = syncItemToGitHub(item, { repository: "org/same-label", cwd: root, run });
 
-  assert.equal(result.label, "cmdb:waiting-approval");
-  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "cmdb:waiting-approval" });
+  assert.equal(result.label, "hulane:waiting-approval");
+  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "hulane:waiting-approval" });
   assert.equal(calls.filter((args) => !isLabelCreate(args)).length, 1, "unchanged label must cost exactly one PATCH");
   assert.ok(!calls.some(isIssueEdit));
 });
@@ -172,7 +172,7 @@ test("fast path skips the label edit when the status label is unchanged", () => 
 test("a 404 on the cached comment id falls back to the conservative full path", () => {
   const root = temporaryRoot();
   const item = createWorkItem({ id: "REQ-24", issue_number: 24, title: "Stale meta", risk_level: "low", delivery_required: true });
-  seedMeta(root, item.id, { comment_id: 999999, state_label: "cmdb:waiting-approval" });
+  seedMeta(root, item.id, { comment_id: 999999, state_label: "hulane:waiting-approval" });
   const managed = {
     id: 424242,
     updated_at: "2026-09-07T00:00:00Z",
@@ -183,16 +183,16 @@ test("a 404 on the cached comment id falls back to the conservative full path", 
     (args) => (isCommentList(args) && !args.includes("--paginate") ? JSON.stringify([managed]) : undefined),
     (args) => (isCommentList(args) ? "[]" : undefined),
     (args) => (isLabelCreate(args) ? "" : undefined),
-    (args) => (isIssueView(args) ? JSON.stringify({ labels: [{ name: "cmdb:blocked" }] }) : undefined),
+    (args) => (isIssueView(args) ? JSON.stringify({ labels: [{ name: "hulane:blocked" }] }) : undefined),
     (args) => (isIssueEdit(args) ? "" : undefined),
     (args) => (isMethod(args, "PATCH") ? "" : undefined),
   ]);
 
   const result = syncItemToGitHub(item, { repository: "org/stale-meta", cwd: root, run });
 
-  assert.equal(result.label, "cmdb:waiting-approval");
-  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "cmdb:waiting-approval" });
-  assert.ok(calls.some((args) => isIssueEdit(args) && args.includes("--remove-label", "cmdb:blocked")), "full path must clean stray state labels");
+  assert.equal(result.label, "hulane:waiting-approval");
+  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 424242, state_label: "hulane:waiting-approval" });
+  assert.ok(calls.some((args) => isIssueEdit(args) && args.includes("--remove-label", "hulane:blocked")), "full path must clean stray state labels");
   assert.equal(calls.filter((args) => isMethod(args, "PATCH") && args.some((value) => String(value).endsWith("/issues/comments/999999"))).length, 1, "only the failed fast-path attempt may target the stale comment id");
 });
 
@@ -209,5 +209,5 @@ test("hydrate records the managed comment id for later fast syncs", () => {
 
   assert.equal(hydrated.id, item.id);
   assert.equal(hydrated.issue_state, "open");
-  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 555, state_label: "cmdb:waiting-approval" });
+  assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 555, state_label: "hulane:waiting-approval" });
 });

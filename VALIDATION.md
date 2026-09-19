@@ -6,7 +6,7 @@ Expected marketplace root:
 hutong-zcode-marketplace/
 ├── marketplace.json
 ├── scripts/validate-marketplace.mjs
-└── cmdb-dev/
+└── hulane/
     └── .zcode-plugin/plugin.json
 ```
 
@@ -23,7 +23,7 @@ hutong-zcode-marketplace/
 - skills: 1
 - MCP tools: 12(名称唯一)
 - 版本号 7 处一致:`marketplace.json`、`plugin.json`、`package.json`、
-  README 插件表、`CMDB_ZCode_AI_Dev_Workflow.md` 文档头、SKILL frontmatter、
+  README 插件表、`Hulane_ZCode_AI_Dev_Workflow.md` 文档头、SKILL frontmatter、
   CHANGELOG 当前版本标题
 - 默认交付策略令牌(`delivery_required: false`、`skip_allowed: true`)
   在 README、INSTALL、流程规范、SKILL 四处原样存在(防漂移哨兵)

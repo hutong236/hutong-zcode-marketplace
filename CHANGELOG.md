@@ -1,9 +1,43 @@
 # Changelog
 
-All notable changes to `cmdb-dev` are recorded here. Versions follow Semantic
-Versioning.
+All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
+Versions follow Semantic Versioning.
 
 ## [Unreleased]
+
+## [3.0.0] - 2026-09-20
+
+### Changed
+
+- **Breaking rename: the plugin `cmdb-dev` is now `hulane`.** The plugin
+  directory, the marketplace name (`hulane-marketplace`), the MCP server
+  (`hulane-control`), all 12 MCP tools (`hulane_*`), all 8 slash commands
+  (`/hulane_*`), all 5 subagents (`hulane-*`), the skill
+  (`hulane-development`), the state CLI (`hulane-state.mjs`), the PR-checks
+  helper (`hulane-pr-checks.sh`), and the env vars (`HULANE_AUTH_TOKEN`,
+  `HULANE_ENABLE_LEGACY_CLI`) use the new name. The rename removes the
+  accidental CMDB coupling so the pipeline works in any project; the gates,
+  the state machine, and the delivery verification are unchanged. Old
+  `cmdb-dev` and new `hulane` install as separate plugins: uninstall the old
+  one first, otherwise both guard hooks and MCP servers mount at once. See
+  `hulane/docs/MIGRATION_hulane.md`.
+- Repositories initialized by cmdb-dev 2.x keep running on the legacy
+  `.cmdb-dev/` control directory. A shared `resolveControlDir` prefers
+  `.hulane/` and falls back to `.cmdb-dev/` wholesale, so the PreToolUse
+  guard, authorizations, worktrees, and the GitHub meta cache never lose
+  track of in-flight items, and re-running init on a legacy repository does
+  not fork state. Fresh initializations create `.hulane/`.
+- GitHub Actions templates and their contracts move to `Hulane PR Checks` /
+  `Hulane Build Image` (with `hulane-pr-checks.sh` and an optional
+  `.github/hulane-ci.sh`), so each repository must rename its required
+  status check once. During the transition `hulane_verify_pr_checks` accepts
+  the old name via its `check_name` argument. New work items branch as
+  `hulane/req-*` and label as `hulane:<state>`; recorded branches and
+  existing issues keep theirs.
+- The GitHub wire protocol is intentionally unchanged: state comments keep
+  the `<!-- cmdb-dev-state:v2 -->` marker and the ` ```cmdb-state ` fence,
+  and issue intake keeps `<!-- cmdb-dev-work-item:v2 -->`, so existing issue
+  state comments stay readable without migration.
 
 ## [2.5.0] - 2026-09-20
 

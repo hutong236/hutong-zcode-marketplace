@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluatePrCheckEvidence } from "../cmdb-dev/scripts/lib/pr-checks.mjs";
+import { evaluatePrCheckEvidence } from "../hulane/scripts/lib/pr-checks.mjs";
 
 const sha = "a".repeat(40);
 const check = {
   __typename: "CheckRun",
   name: "verify",
-  workflowName: "CMDB PR Checks",
+  workflowName: "Hulane PR Checks",
   status: "COMPLETED",
   conclusion: "SUCCESS",
-  detailsUrl: "https://github.com/acme/cmdb/actions/runs/123/job/456",
+  detailsUrl: "https://github.com/acme/demo/actions/runs/123/job/456",
 };
 const pr = {
   number: 42,
@@ -81,7 +81,7 @@ test("control-plane mode requires every reported check to succeed", () => {
         workflowName: "Additional Checks",
         status: "IN_PROGRESS",
         conclusion: "",
-        detailsUrl: "https://github.com/acme/cmdb/actions/runs/789",
+        detailsUrl: "https://github.com/acme/demo/actions/runs/789",
       }],
     },
     isPrivate: true,

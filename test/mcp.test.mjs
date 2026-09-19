@@ -5,17 +5,17 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { TOOL_DEFINITIONS, callTool } from "../cmdb-dev/mcp/tools.mjs";
-import { validateInput } from "../cmdb-dev/mcp/validate.mjs";
+import { TOOL_DEFINITIONS, callTool } from "../hulane/mcp/tools.mjs";
+import { validateInput } from "../hulane/mcp/validate.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const server = path.join(repositoryRoot, "cmdb-dev", "mcp", "server.mjs");
+const server = path.join(repositoryRoot, "hulane", "mcp", "server.mjs");
 
 function gitRepository() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cmdb-mcp-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-mcp-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-  execFileSync("git", ["config", "user.name", "CMDB Test"], { cwd: root });
+  execFileSync("git", ["config", "user.name", "Hulane Test"], { cwd: root });
   fs.writeFileSync(path.join(root, "README.md"), "test\n");
   execFileSync("git", ["add", "README.md"], { cwd: root });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: root });
@@ -25,7 +25,7 @@ function gitRepository() {
 test("MCP tool catalog is deterministic and input schemas reject extra fields", () => {
   assert.equal(TOOL_DEFINITIONS.length, 12);
   assert.equal(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size, 12);
-  const preflight = TOOL_DEFINITIONS.find((tool) => tool.name === "cmdb_preflight");
+  const preflight = TOOL_DEFINITIONS.find((tool) => tool.name === "hulane_preflight");
   assert.deepEqual(validateInput(preflight.inputSchema, { unexpected: true }), ["arguments.unexpected is not allowed"]);
 });
 
@@ -42,8 +42,8 @@ test("MCP server supports modern discovery and legacy initialization", () => {
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "1" } } },
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "cmdb_initialize", arguments: {} } },
-    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "cmdb_validate", arguments: {} } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "hulane_initialize", arguments: {} } },
+    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "hulane_validate", arguments: {} } },
   ];
   const result = spawnSync(process.execPath, [server], {
     cwd: root,
@@ -58,12 +58,12 @@ test("MCP server supports modern discovery and legacy initialization", () => {
   assert.equal(responses.find((response) => response.id === 2).result.tools.length, 12);
   assert.equal(responses.find((response) => response.id === 3).result.isError, undefined);
   assert.equal(responses.find((response) => response.id === 4).result.structuredContent.valid, true);
-  assert.ok(fs.existsSync(path.join(root, ".cmdb-dev", "state.json")));
+  assert.ok(fs.existsSync(path.join(root, ".hulane", "state.json")));
 });
 
 test("MCP server returns a protocol error for malformed tool input", () => {
   const root = gitRepository();
-  const request = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "cmdb_transition", arguments: { id: "bad" } } };
+  const request = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "hulane_transition", arguments: { id: "bad" } } };
   const result = spawnSync(process.execPath, [server], { cwd: root, input: `${JSON.stringify(request)}\n`, encoding: "utf8" });
   const response = JSON.parse(result.stdout.trim());
   assert.equal(response.error.code, -32602);
@@ -71,18 +71,18 @@ test("MCP server returns a protocol error for malformed tool input", () => {
 
 test("generic transitions cannot bypass dedicated worktree, PR-check, or delivery evidence tools", () => {
   const root = gitRepository();
-  assert.throws(() => callTool("cmdb_transition", {
+  assert.throws(() => callTool("hulane_transition", {
     id: "REQ-1",
     event: "image_verified",
     actor: "orchestrator",
     evidence: "forged",
     sync: false,
-  }, { cwd: root, pluginRoot: path.join(repositoryRoot, "cmdb-dev") }), /reserved/);
-  assert.throws(() => callTool("cmdb_transition", {
+  }, { cwd: root, pluginRoot: path.join(repositoryRoot, "hulane") }), /reserved/);
+  assert.throws(() => callTool("hulane_transition", {
     id: "REQ-1",
     event: "checks_passed",
     actor: "orchestrator",
     evidence: "forged",
     sync: false,
-  }, { cwd: root, pluginRoot: path.join(repositoryRoot, "cmdb-dev") }), /reserved/);
+  }, { cwd: root, pluginRoot: path.join(repositoryRoot, "hulane") }), /reserved/);
 });
