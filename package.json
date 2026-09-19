@@ -9,6 +9,7 @@
   },
   "scripts": {
     "validate": "node scripts/validate-marketplace.mjs",
+    "sync-version": "node scripts/sync-version.mjs",
     "test": "node --test"
   }
 }

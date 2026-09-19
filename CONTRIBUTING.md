@@ -14,15 +14,19 @@
 
 ## 版本与变更记录
 
-- 每次插件改动递增 SemVer 版本,并同步以下 7 处(CI 已强制一致,
-  `npm run validate` 本地即可发现遗漏):
-  1. `marketplace.json`
-  2. `cmdb-dev/.zcode-plugin/plugin.json`
-  3. `package.json`
-  4. `README.md` 插件表
-  5. `CMDB_ZCode_AI_Dev_Workflow.md` 头部版本
-  6. `cmdb-dev/skills/cmdb-development/SKILL.md` frontmatter
-  7. `CHANGELOG.md` 新版本条目
+发版时版本号只手写一次:
+
+1. 在 `CHANGELOG.md` 顶部新增版本条目(标题 `## [2.5.1] - 2026-09-20` +
+   改动内容)——这是唯一手写版本号的位置;
+2. 运行 `npm run sync-version`:脚本从 CHANGELOG 标题读出版本与日期,
+   自动改写其余 6 处(`marketplace.json`、`plugin.json`、`package.json`、
+   README 插件表、流程规范文档头、SKILL frontmatter),并跑一遍
+   validate 自证没漏;
+3. 正常提交推送。提交仍包含全部 7 个文件,其中 6 个由脚本改写。
+
+版本一致性断言保留在 validate 与 CI 中作兜底(漏改在机制上已不可能,
+断言防的是绕过脚本的手改)。其余要求:
+
 - `CHANGELOG.md` 每个版本必须写明动机,有取证数据(会话错误统计等)时
   一并写入,保持现有 Keep-a-Changelog 风格。
 - 默认交付策略的载重令牌(`delivery_required: false`、

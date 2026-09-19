@@ -47,7 +47,7 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 
 ## 更新
 
-修改插件后提交推送,并同步递增版本号。版本号在 7 处必须一致(`marketplace.json`、`plugin.json`、`package.json`、README 插件表、流程规范文档头、SKILL frontmatter、CHANGELOG),`npm run validate` 与 CI 已全部强制,漏改会直接失败。ZCode 按 commit 跟踪更新。
+发版流程:在 CHANGELOG 顶部手写新版本条目(唯一敲版本号的地方),然后运行 `npm run sync-version`——脚本自动同步其余 6 处版本号(含流程规范文档头的日期)并跑一遍 validate。7 处一致性由 validate 与 CI 强制兜底。ZCode 按 commit 跟踪更新。
 
 ## 验证
 

@@ -11,6 +11,8 @@ hutong-zcode-marketplace/
 ```
 
 每次 push 前运行 `npm run validate`(CI 在 PR 与 push main 时运行同一检查)。
+发版时的版本号同步用 `npm run sync-version`:从 CHANGELOG 标题读出版本,
+自动改写其余 6 处,末尾自动跑一遍 validate。
 
 校验事实:
 
