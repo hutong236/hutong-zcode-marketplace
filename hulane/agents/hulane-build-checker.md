@@ -1,6 +1,6 @@
 ---
 name: hulane-build-checker
-description: Read-only GitHub Actions and Docker image delivery verifier. Confirm merged SHA, workflow result, image push, image tags, digest and run URL.
+description: 只读的 GitHub Actions 与 Docker 镜像交付核验员。确认合并 SHA、工作流结果、镜像推送、镜像标签、摘要与运行链接。
 tools:
   - Read
   - Grep

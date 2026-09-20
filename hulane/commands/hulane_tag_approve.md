@@ -1,5 +1,5 @@
 ---
-description: Explicitly confirm Hulane tag/image delivery after merge; a confirmed tag triggers the image build, or skip ships without an image.
+description: 合并后显式确认 tag/镜像交付（Gate C）：确认 tag 触发镜像构建，选 skip 则不带镜像直接发版。
 argument-hint: "<REQ-123 or BUG-123> [vX.Y.Z | skip]"
 skills: hulane-development
 ---

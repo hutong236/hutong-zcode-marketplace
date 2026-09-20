@@ -1,5 +1,5 @@
 ---
-description: Approve a Hulane Work Item and run the automated pipeline through code, test, review, PR, merge, tag confirmation, image verification, and Done.
+description: 批准一个 Hulane 工作项，自动跑完整条流水线：编码、测试、评审、PR、合并、tag 确认、镜像核验，直至 Done。
 argument-hint: "<REQ-123 or BUG-123> [optional constraints]"
 skills: hulane-development
 ---

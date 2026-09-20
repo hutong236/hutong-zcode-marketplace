@@ -1,5 +1,5 @@
 ---
-description: Resume an interrupted Hulane AI development Work Item from verified Git/GitHub state instead of chat memory.
+description: 基于已核验的 Git/GitHub 状态（而非会话记忆）恢复被中断的 Hulane 工作项。
 argument-hint: "<REQ-123 or BUG-123>"
 skills: hulane-development
 ---

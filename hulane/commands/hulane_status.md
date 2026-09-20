@@ -1,5 +1,5 @@
 ---
-description: Read-only Hulane development status reconciliation from GitHub, Git, local projections, PR checks and image builds.
+description: 只读对账 Hulane 研发状态，汇总 GitHub、Git、本地投影、PR checks 与镜像构建信息。
 argument-hint: "[optional REQ-123/BUG-123]"
 skills: hulane-development
 ---

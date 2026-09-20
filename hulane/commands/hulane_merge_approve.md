@@ -1,5 +1,5 @@
 ---
-description: Explicitly approve a high-risk Hulane PR merge, then stop for the human tag/image confirmation gate.
+description: 显式批准高风险的 Hulane PR 合并（Gate B），然后停在人工 tag/镜像确认关口。
 argument-hint: "<REQ-123 or BUG-123>"
 skills: hulane-development
 ---

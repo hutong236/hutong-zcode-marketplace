@@ -1,6 +1,6 @@
 ---
 name: hulane-planner
-description: Read-only Hulane requirement planner. Analyze scope, affected modules, acceptance criteria, tests, compatibility, dependencies and risk before implementation. Never modify code.
+description: 只读的 Hulane 需求规划师。在实现前分析范围、受影响模块、验收标准、测试、兼容性、依赖与风险。绝不修改代码。
 tools:
   - Read
   - Grep

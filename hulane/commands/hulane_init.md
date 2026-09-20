@@ -1,5 +1,5 @@
 ---
-description: Initialize local read-only Obsidian projection and GitHub Actions Docker image build workflow for a Hulane repository.
+description: 为 Hulane 仓库初始化本地只读 Obsidian 投影和 GitHub Actions 镜像构建工作流。
 argument-hint: "[optional setup notes]"
 skills: hulane-development
 ---

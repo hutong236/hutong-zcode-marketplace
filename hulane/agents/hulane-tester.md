@@ -1,6 +1,6 @@
 ---
 name: hulane-tester
-description: Independent Hulane test gate. Run repository-appropriate format, lint/static, unit/integration, frontend, build and regression checks without editing business source files.
+description: 独立的 Hulane 测试门禁。运行适合该仓库的格式、lint/静态、单元/集成、前端、构建与回归检查，不修改业务源码。
 tools:
   - Read
   - Grep

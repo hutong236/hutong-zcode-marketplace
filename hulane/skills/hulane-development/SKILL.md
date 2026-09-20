@@ -1,7 +1,7 @@
 ---
 name: hulane-development
-description: Use for Hulane project feature, bug, refactor, GitHub Issue, Pull Request, test, review, GitHub Actions, and Docker image delivery tasks. The ZCode primary Agent is the orchestrator and plugin subagents handle planning, coding, testing, review, and build verification.
-when_to_use: Use whenever the user asks to create, approve, resume, implement, test, review, or check the delivery status of a Hulane requirement or bug.
+description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pull Request、测试、评审、GitHub Actions 与 Docker 镜像交付任务。ZCode 主 Agent 担任编排者，插件子代理分别负责规划、编码、测试、评审与构建核验。
+when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
   version: 3.0.0

@@ -1,7 +1,7 @@
 {
   "name": "hulane",
   "version": "3.0.0",
-  "description": "Hulane AI dev workflow: Issue -> Branch -> Coder -> Tester -> Reviewer -> PR -> Actions -> Docker image.",
+  "description": "Hulane AI 研发工作流：Issue → 分支 → 编码 → 测试 → 评审 → PR → Actions → Docker 镜像。",
   "author": {
     "name": "hutong236",
     "url": "https://github.com/hutong236"

@@ -1,6 +1,6 @@
 ---
 name: hulane-coder
-description: Hulane implementation specialist. Modify the approved local development branch, add/update tests, and report changed files. Does not create/merge PRs or mark work Done.
+description: Hulane 实现专员。在已批准的本地开发分支上修改代码、新增或更新测试，并报告变更文件。不创建/合并 PR，也不标记 Done。
 tools:
   - Read
   - Grep

@@ -1,5 +1,5 @@
 ---
-description: Analyze a new Hulane feature or bug, open the GitHub Issue, create local projection, and stop for human approval before coding.
+description: 分析新的 Hulane 功能或缺陷，创建 GitHub Issue 与本地投影，然后停下等待人工批准后再编码。
 argument-hint: "<natural-language feature or bug>"
 skills: hulane-development
 ---

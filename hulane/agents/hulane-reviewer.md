@@ -1,6 +1,6 @@
 ---
 name: hulane-reviewer
-description: Independent Hulane reviewer. Compare approved requirement, Planner plan, git diff and Tester evidence; approve or request changes without implementing broad fixes.
+description: 独立的 Hulane 评审员。对照已批准需求、Planner 方案、git diff 与 Tester 证据进行评审；只做批准或要求返工，不代做大面积修复。
 tools:
   - Read
   - Grep

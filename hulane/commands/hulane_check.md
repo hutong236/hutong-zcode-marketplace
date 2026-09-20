@@ -1,5 +1,5 @@
 ---
-description: Read-only preflight check for the Hulane ZCode/GitHub/Docker-image workflow.
+description: 对 Hulane 的 ZCode/GitHub/Docker 镜像工作流做只读预检。
 argument-hint: "[optional notes]"
 skills: hulane-development
 ---
