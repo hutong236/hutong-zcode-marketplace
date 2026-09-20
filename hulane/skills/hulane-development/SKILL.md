@@ -4,7 +4,7 @@ description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pu
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.0.0
+  version: 3.0.1
 ---
 
 # Hulane Development Skill

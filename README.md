@@ -6,7 +6,7 @@ Hulane AI 研发流水线的 ZCode 插件市场。仓库根目录即 Marketplace
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.0.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.0.1 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 
 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
 

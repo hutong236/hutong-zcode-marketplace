@@ -5,6 +5,16 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-20
+
+### Changed
+
+- All user-facing plugin introductions are now written in Chinese: the
+  marketplace and plugin descriptions, the five subagent descriptions, the
+  skill `description`/`when_to_use`, and all 8 `/hulane_*` command
+  descriptions. MCP tool descriptions and instruction bodies stay in
+  English so the orchestration contracts remain byte-stable.
+
 ## [3.0.0] - 2026-09-20
 
 ### Changed
