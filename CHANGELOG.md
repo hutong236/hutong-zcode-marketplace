@@ -5,6 +5,32 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-24
+
+### Added
+
+- Frontend/UI work items are now planned, implemented, tested and reviewed
+  against the target repository's own frontend UI guidelines document (in
+  the CMDB repository, `docs/frontend-ui-guidelines.md`). `hulane-planner`
+  reads the document before finalizing a frontend plan, classifies each
+  affected page into its archetype (dashboard/list/tree/card-grid/canvas/
+  settings), and derives UI conformance acceptance criteria from it —
+  archetype skeleton, design-token-only colors, light/dark theme parity,
+  and the accessibility baseline. `hulane-coder` reads the document first
+  and keeps generic baselines even without it: no hardcoded hex/rgb colors,
+  shared list-page pattern classes and the three-section skeleton, dark
+  mode via token flips only, enumerated transition properties, scoped
+  `:deep()` for component-library internals, and no prop mutation.
+  `hulane-tester` adds hardcoded-color scans and frontend builds to its
+  checks and reports purely visual baselines (theme parity, focus ring,
+  reduced-motion) as human-confirmation items; `hulane-reviewer` checks
+  frontend diffs against the UI acceptance criteria. The skill grounds
+  small-lane inline plans in the same document and carries the UI criteria
+  into dispatch prompts; `/hulane_dev` states the requirement at intake and
+  the work-item template hints the UI coverage. Wording stays
+  repository-agnostic: a repository without such a document degrades
+  gracefully (the planner notes it in `scope_questions`).
+
 ## [3.0.1] - 2026-09-20
 
 ### Changed

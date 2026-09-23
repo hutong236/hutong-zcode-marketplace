@@ -6,7 +6,7 @@
       "name": "hulane",
       "source": "./hulane",
       "description": "Hulane AI 研发流水线：从 GitHub Issue 到编码、测试、评审、PR，再到 Docker 镜像交付。",
-      "version": "3.0.1",
+      "version": "3.1.0",
       "category": "development",
       "tags": [
         "hulane",
