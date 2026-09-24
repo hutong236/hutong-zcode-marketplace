@@ -4,7 +4,7 @@ description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pu
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.1.0
+  version: 3.2.0
 ---
 
 # Hulane Development Skill
@@ -50,7 +50,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 
 1. Inspect repository and classify request.
 2. If it is not development work, do not create an Issue.
-3. Classify the intake size. A small change (pure frontend/UI or docs, expected to touch few files, no schema/API/auth/data-path change, risk low) may skip the `hulane-planner` dispatch: write the planner summary, risk, delivery policy, and acceptance criteria inline and pass `size: "small"` to `hulane_open_work_item`. Anything else dispatches `hulane-planner` read-only and uses `size: "standard"`. If small-scope work balloons during Coder, patch `size` back to `standard` and continue with full discipline. For frontend/UI items, ground the plan and its acceptance criteria in the repository's frontend UI guidelines document (for example `docs/frontend-ui-guidelines.md`) — page archetype, design-token-only colors, light/dark theme parity, and the accessibility baseline — whether the plan is written inline (small) or returned by `hulane-planner`.
+3. Classify the intake size. A small change (single-domain — pure frontend/UI, pure backend, or docs — expected to touch few files, no schema/API/auth/data-path change, risk low) may skip the `hulane-planner` dispatch: write the planner summary, risk, delivery policy, and acceptance criteria inline and pass `size: "small"` to `hulane_open_work_item`. Anything else dispatches `hulane-planner` read-only and uses `size: "standard"`. If small-scope work balloons during Coder, patch `size` back to `standard` and continue with full discipline. For frontend/UI or backend Go items, ground the plan and its acceptance criteria in the repository's own guidelines documents (for example `docs/frontend-ui-guidelines.md`, `docs/backend-guidelines.md`) — for frontend: page archetype, design-token-only colors, light/dark theme parity, and the accessibility baseline; for backend: layering boundaries, error wrapping and sentinel mapping, envelope and pagination, migration idempotency, and Swagger sync — whether the plan is written inline (small) or returned by `hulane-planner`.
 4. Call `hulane_open_work_item`; it creates the GitHub Issue first, derives REQ/BUG ID, persists machine state, and writes the projection.
 5. Verify the returned Issue title/body and waiting_approval state.
 6. Persist Planner delivery policy with an on-demand release cadence: the default is `delivery_required: false` and `skip_allowed: true`, so a merged change ships no image until the user explicitly asks to release. Use `delivery_required: true` and `skip_allowed: false` only when the user explicitly requests an image/release for this item.
@@ -63,7 +63,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 1. Verify Issue remains open and reconcile remote/local state.
 2. Comment approval on the Issue.
 3. Create/reuse the Work Item's isolated worktree and branch from the current default branch.
-4. Dispatch Coder with the recorded worktree path; for frontend/UI items include the UI guidelines document path and the UI acceptance criteria in the Coder, Tester and Reviewer dispatch prompts.
+4. Dispatch Coder with the recorded worktree path; for domain-guideline items (frontend/UI, backend Go) include the relevant guidelines document paths and the derived acceptance criteria in the Coder, Tester and Reviewer dispatch prompts.
 5. Coder complete -> dispatch hulane-tester and hulane-reviewer in the same round. Reviewer is read-only, so parallel dispatch never violates the single-writer rule.
 6. Tester failure caused by implementation or Reviewer changes_requested -> Coder, then re-dispatch both in parallel; the stale sibling result is discarded.
 7. Only when Tester passed AND Reviewer approved -> Primary Agent commits only related changes, calls `hulane_authorize(git-push)`, and performs one authorized push.

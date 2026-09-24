@@ -5,6 +5,36 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-24
+
+### Added
+
+- Backend Go/Gin/GORM work items are now planned, implemented, tested and
+  reviewed against the target repository's own backend guidelines document
+  (in the CMDB repository, `docs/backend-guidelines.md`), mirroring the
+  frontend UI integration from 3.1.0. `hulane-planner` derives backend
+  acceptance criteria from it — layering boundaries, error wrapping and
+  sentinel-error-to-status mapping, response envelope and pagination
+  conformance, migration idempotency, audit coverage for write paths, and
+  Swagger sync for API changes. `hulane-coder` reads the document first and
+  keeps generic baselines even without it: handler/service/repository
+  layering (no business logic or `*gorm.DB` in handlers), `%w` error
+  wrapping matched via `errors.Is` (sentinel domain errors,
+  `gorm.ErrRecordNotFound`), shared envelope/pagination helpers,
+  transaction boundaries in the service layer, idempotent dialect-guarded
+  migrations, and Swagger annotations in sync with any API change.
+  `hulane-tester` runs the backend minimum gate (build/vet/gofmt/test plus
+  route-guard tests where present) and flags API changes whose Swagger docs
+  were not regenerated; `hulane-reviewer` checks backend diffs against the
+  backend acceptance criteria. As anticipated when the frontend guidelines
+  landed, every "frontend/UI" enumeration is generalized into a
+  domain-category sentence (frontend UI, backend Go) across the four
+  agents, `/hulane_dev`, the skill, and the work-item template, and the
+  small lane now also admits small single-domain pure-backend changes
+  (same structural exclusions: no schema/API/auth/data-path change, low
+  risk). Wording stays repository-agnostic: a repository without such a
+  document degrades gracefully (the planner notes it in `scope_questions`).
+
 ## [3.1.0] - 2026-09-24
 
 ### Added
