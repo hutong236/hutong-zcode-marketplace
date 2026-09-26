@@ -15,6 +15,26 @@
         "multi-agent"
       ],
       "strict": true
+    },
+    {
+      "name": "invoice-expense-report",
+      "source": "./invoice-expense-report",
+      "description": "发票报销整理：从 PDF 发票（高铁票、机票、滴滴、酒店）还原行程链、核对完整性、确认补贴天数，并生成报销统计 Excel。",
+      "version": "0.1.0",
+      "category": "productivity",
+      "displayName": "Invoice Expense Report",
+      "displayName_i18n": {
+        "zh-CN": "发票报销统计"
+      },
+      "description_i18n": {
+        "zh-CN": "整理出差发票（高铁票、机票、滴滴票、酒店发票/结账单），自动还原行程链并核对缺票，人工确认补贴天数后生成报销统计 Excel。"
+      },
+      "tags": [
+        "invoice",
+        "expense-report",
+        "pdf",
+        "excel"
+      ]
     }
   ]
 }

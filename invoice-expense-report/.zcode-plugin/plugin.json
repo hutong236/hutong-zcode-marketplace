@@ -1,0 +1,19 @@
+{
+  "name": "invoice-expense-report",
+  "version": "0.1.0",
+  "description": "发票报销整理：从 PDF 发票（高铁票、机票、滴滴、酒店）还原行程链、核对完整性、确认补贴天数，并生成报销统计 Excel。",
+  "author": {
+    "name": "hutong236",
+    "url": "https://github.com/hutong236"
+  },
+  "homepage": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "repository": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "invoice",
+    "expense-report",
+    "pdf",
+    "excel"
+  ],
+  "skills": "skills"
+}
