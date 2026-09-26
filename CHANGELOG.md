@@ -5,6 +5,23 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-26
+
+### Added
+
+- Backend Go code generation now goes through the companion
+  `modern-go-guidelines` plugin (marketplace `goland-claude-marketplace`).
+  `hulane-coder` gains the `Skill` tool and, on backend items, invokes the
+  `modern-go-guidelines:use-modern-go` skill before writing or editing any
+  Go file, applying its version-specific modern-Go guidance on top of the
+  repository's own backend guidelines and the generic baselines from 3.2.0;
+  when the skill is unavailable the coder records the absence in
+  `known_risks` and continues. The orchestrator flow checks the skill at
+  Coder dispatch — missing skill triggers a one-time user install hint
+  plus an explicit fallback note in the dispatch prompt — and `/hulane_dev`
+  repeats the check and recommendation at intake so the user can install
+  during the Gate A stop. README documents the optional companion plugin.
+
 ## [3.2.0] - 2026-09-24
 
 ### Added

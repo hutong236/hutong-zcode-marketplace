@@ -4,7 +4,7 @@ description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pu
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.2.0
+  version: 3.3.0
 ---
 
 # Hulane Development Skill
@@ -63,7 +63,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 1. Verify Issue remains open and reconcile remote/local state.
 2. Comment approval on the Issue.
 3. Create/reuse the Work Item's isolated worktree and branch from the current default branch.
-4. Dispatch Coder with the recorded worktree path; for domain-guideline items (frontend/UI, backend Go) include the relevant guidelines document paths and the derived acceptance criteria in the Coder, Tester and Reviewer dispatch prompts.
+4. Dispatch Coder with the recorded worktree path; for domain-guideline items (frontend/UI, backend Go) include the relevant guidelines document paths and the derived acceptance criteria in the Coder, Tester and Reviewer dispatch prompts. For backend Go items, also instruct Coder to invoke the `modern-go-guidelines:use-modern-go` skill before writing or editing Go files; when that skill is not installed, tell the user once how to install the companion plugin (marketplace `goland-claude-marketplace`, plugin `modern-go-guidelines`), then dispatch with an explicit fallback note so Coder continues on the backend guidelines and baselines and records the absence in known_risks.
 5. Coder complete -> dispatch hulane-tester and hulane-reviewer in the same round. Reviewer is read-only, so parallel dispatch never violates the single-writer rule.
 6. Tester failure caused by implementation or Reviewer changes_requested -> Coder, then re-dispatch both in parallel; the stale sibling result is discarded.
 7. Only when Tester passed AND Reviewer approved -> Primary Agent commits only related changes, calls `hulane_authorize(git-push)`, and performs one authorized push.

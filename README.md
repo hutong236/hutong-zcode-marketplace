@@ -6,9 +6,11 @@ Hulane AI 研发流水线的 ZCode 插件市场。仓库根目录即 Marketplace
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.2.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.3.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 
 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
+
+可选伴侣插件：后端 Go 工单在生成/修改 Go 代码前由 `hulane-coder` 调用 `modern-go-guidelines` 插件的 `use-modern-go` 技能（市场 `goland-claude-marketplace`），按目标 Go 版本应用现代惯用法；未安装时流程会提示安装，并按仓库后端规范降级继续。
 
 ## 在 ZCode 中添加
 
