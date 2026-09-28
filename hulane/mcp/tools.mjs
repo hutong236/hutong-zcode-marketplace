@@ -47,7 +47,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: "hulane_transition",
     description: "Apply one evidence-bearing state-machine event, update projection, and normally sync the GitHub Issue.",
     inputSchema: objectSchema({
-      id, event: text, actor: text, evidence: text, patch: { type: "object" }, to: { type: "string" },
+      id, event: text, actor: text, evidence: text, patch: { type: "object", additionalProperties: true }, to: { type: "string" },
       sync: { type: "boolean", default: true }, repository: { type: "string" },
     }, ["id", "event", "actor", "evidence"]),
     annotations: { readOnlyHint: false, destructiveHint: false },
@@ -108,7 +108,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
     name: "hulane_verify_delivery",
     description: "Cross-check Actions, Release, registry digest, merged SHA, SBOM and provenance; then record image_verified.",
     inputSchema: objectSchema({
-      id, workflow_metadata: { type: "object" }, release_metadata: { type: "object" }, registry_digest: text,
+      id, workflow_metadata: { type: "object", additionalProperties: true }, release_metadata: { type: "object", additionalProperties: true }, registry_digest: text,
       release_url: text, sbom_digest: text, provenance_digest: text, actor: { const: "orchestrator" }, evidence: text,
       sync: { type: "boolean", default: true }, repository: { type: "string" },
     }, ["id", "workflow_metadata", "release_metadata", "registry_digest", "release_url", "sbom_digest", "provenance_digest", "actor", "evidence"]),

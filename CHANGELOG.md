@@ -5,6 +5,16 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP tool schemas now declare `additionalProperties: true` on nested object
+  parameters (`hulane_transition` `patch`, `hulane_verify_delivery`
+  `workflow_metadata`/`release_metadata`). The ZCode MCP client strips keys
+  from nested objects whose schema lacks an explicit `additionalProperties:
+  true`, so evidence patches (`pr_number`, `merged_sha`, …) arrived at the
+  server empty and evidence-bearing transitions failed with errors like
+  "pr_created requires a positive pr_number".
+
 ## [3.3.0] - 2026-09-26
 
 ### Added
