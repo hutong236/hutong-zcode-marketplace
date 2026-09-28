@@ -5,6 +5,8 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-09-28
+
 ### Fixed
 
 - MCP tool schemas now declare `additionalProperties: true` on nested object

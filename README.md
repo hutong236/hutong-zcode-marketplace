@@ -6,7 +6,7 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.3.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.3.1 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
 `hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
