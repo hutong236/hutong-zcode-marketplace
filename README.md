@@ -6,14 +6,16 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.3.1 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.4.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
-`hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、5 个子 Agent（planner / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
+`hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、6 个子 Agent（planner / designer / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
 
 可选伴侣插件：后端 Go 工单在生成/修改 Go 代码前由 `hulane-coder` 调用 `modern-go-guidelines` 插件的 `use-modern-go` 技能（市场 `goland-claude-marketplace`），按目标 Go 版本应用现代惯用法；未安装时流程会提示安装，并按仓库后端规范降级继续。
+
+前端页面级工单（新页面、布局/骨架改版、仓库首次使用某原型）在 Gate A 前由 `hulane-designer` 产出页面设计说明（区域→组件/令牌映射、交互状态、偏离声明，≤150 行）与按需单文件 HTML 原型，随需求与实现方案一并审批；设计产出只读业务代码，原型暂存 git 排除的 `.hulane/designs/`，批准后随实现 PR 以 `docs/designs/<ID>.html` 入库。`hulane-designer` 通过 agent frontmatter 的 `model:` 钉在 Kimi（`kimi-for-coding`）上以节省主套餐 token；换机或未配置该模型时把 `hulane/agents/hulane-designer.md` 里的 `model:` 改成本机 Provider/模型（`ListModels` 可查），或删掉该行回落会话模型，Kimi 派发失败时编排者也会自动降级为会话模型并注明 `session-fallback`。
 
 ## 在 ZCode 中添加
 
@@ -46,6 +48,7 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 - 控制面模式会核对 Actions 成功结果、固定 PR Head SHA，并要求合并命令携带 `--match-head-commit`；它不能阻止仓库管理员在 GitHub 页面手工绕过流程；
 - 默认交付策略为 `delivery_required: false` + `skip_allowed: true`(合并后跳过镜像,按需批量发版);仅当用户明确要求本次出镜像时才标记 `delivery_required: true`;
 - Coder 完成后不增加人工 Gate，Tester 与 Reviewer 自动衔接。
+- 前端页面级工单在写代码前产出页面设计并入 Gate A 审批包：设计说明强制映射到既有组件/设计令牌，新视觉词汇必须附偏离声明由人工裁决；未触发设计的条目零设计开销。
 - 每个 Work Item 使用独立 worktree；push/tag 受保护操作需要一次性授权令牌，merge/close 由 guard 按状态自证放行；自动返工最多 3 轮。
 - 镜像完成必须交叉核对 Actions 元数据、GitHub Release 与 GHCR 摘要，并验证 SBOM/Provenance 证据。
 - Slash Command 只编排；MCP 服务统一执行状态迁移、GitHub 同步、worktree、授权与交付核验。

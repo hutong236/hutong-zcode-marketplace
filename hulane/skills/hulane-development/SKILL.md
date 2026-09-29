@@ -4,12 +4,12 @@ description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pu
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.3.1
+  version: 3.4.0
 ---
 
 # Hulane Development Skill
 
-The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `hulane-planner`, `hulane-coder`, `hulane-tester`, `hulane-reviewer`, `hulane-build-checker`. A subagent must never be asked to spawn another subagent.
+The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `hulane-planner`, `hulane-designer`, `hulane-coder`, `hulane-tester`, `hulane-reviewer`, `hulane-build-checker`. A subagent must never be asked to spawn another subagent.
 
 ## Human gates
 
@@ -53,17 +53,18 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 3. Classify the intake size. A small change (single-domain — pure frontend/UI, pure backend, or docs — expected to touch few files, no schema/API/auth/data-path change, risk low) may skip the `hulane-planner` dispatch: write the planner summary, risk, delivery policy, and acceptance criteria inline and pass `size: "small"` to `hulane_open_work_item`. Anything else dispatches `hulane-planner` read-only and uses `size: "standard"`. If small-scope work balloons during Coder, patch `size` back to `standard` and continue with full discipline. For frontend/UI or backend Go items, ground the plan and its acceptance criteria in the repository's own guidelines documents (for example `docs/frontend-ui-guidelines.md`, `docs/backend-guidelines.md`) — for frontend: page archetype, design-token-only colors, light/dark theme parity, and the accessibility baseline; for backend: layering boundaries, error wrapping and sentinel mapping, envelope and pagination, migration idempotency, and Swagger sync — whether the plan is written inline (small) or returned by `hulane-planner`.
 4. Call `hulane_open_work_item`; it creates the GitHub Issue first, derives REQ/BUG ID, persists machine state, and writes the projection.
 5. Verify the returned Issue title/body and waiting_approval state.
-6. Persist Planner delivery policy with an on-demand release cadence: the default is `delivery_required: false` and `skip_allowed: true`, so a merged change ships no image until the user explicitly asks to release. Use `delivery_required: true` and `skip_allowed: false` only when the user explicitly requests an image/release for this item.
-7. Write/update local read-only Markdown projection.
-8. Set `status: waiting_approval`, `human_approval: required`.
-9. STOP. Do not create branch or edit business code.
+6. When the Planner returned `page_design_needed: true`, dispatch `hulane-designer` (it runs on its own pinned model) with the work item ID, requirement text, Planner summary and design_targets; it stays read-only on business code and may only write a prototype under `.hulane/designs/<ID>.html` (git-excluded). Post the returned design_spec as one GitHub Issue comment so Gate A reviews requirement, plan and page design together, and mirror it into the projection's 页面设计 section. If the designer dispatch fails because its pinned model is unavailable, tell the user once and re-dispatch the same design brief through the general-purpose agent on the session model, recording `designer_model: session-fallback` in the projection note. Design changes requested after Gate A approval are a scope decision: confirm with the human and record the revision.
+7. Persist Planner delivery policy with an on-demand release cadence: the default is `delivery_required: false` and `skip_allowed: true`, so a merged change ships no image until the user explicitly asks to release. Use `delivery_required: true` and `skip_allowed: false` only when the user explicitly requests an image/release for this item.
+8. Write/update local read-only Markdown projection.
+9. Set `status: waiting_approval`, `human_approval: required`.
+10. STOP. Do not create branch or edit business code.
 
 ## After explicit approval
 
 1. Verify Issue remains open and reconcile remote/local state.
 2. Comment approval on the Issue.
-3. Create/reuse the Work Item's isolated worktree and branch from the current default branch.
-4. Dispatch Coder with the recorded worktree path; for domain-guideline items (frontend/UI, backend Go) include the relevant guidelines document paths and the derived acceptance criteria in the Coder, Tester and Reviewer dispatch prompts. For backend Go items, also instruct Coder to invoke the `modern-go-guidelines:use-modern-go` skill before writing or editing Go files; when that skill is not installed, tell the user once how to install the companion plugin (marketplace `goland-claude-marketplace`, plugin `modern-go-guidelines`), then dispatch with an explicit fallback note so Coder continues on the backend guidelines and baselines and records the absence in known_risks.
+3. Create/reuse the Work Item's isolated worktree and branch from the current default branch. When an approved prototype exists at `.hulane/designs/<ID>.html`, copy it into the worktree at `docs/designs/<ID>.html` so it ships with the implementation PR.
+4. Dispatch Coder with the recorded worktree path; for domain-guideline items (frontend/UI, backend Go) include the relevant guidelines document paths and the derived acceptance criteria in the Coder, Tester and Reviewer dispatch prompts, and when the item carries an approved design_spec include it and the prototype path in those same dispatch prompts. For backend Go items, also instruct Coder to invoke the `modern-go-guidelines:use-modern-go` skill before writing or editing Go files; when that skill is not installed, tell the user once how to install the companion plugin (marketplace `goland-claude-marketplace`, plugin `modern-go-guidelines`), then dispatch with an explicit fallback note so Coder continues on the backend guidelines and baselines and records the absence in known_risks.
 5. Coder complete -> dispatch hulane-tester and hulane-reviewer in the same round. Reviewer is read-only, so parallel dispatch never violates the single-writer rule.
 6. Tester failure caused by implementation or Reviewer changes_requested -> Coder, then re-dispatch both in parallel; the stale sibling result is discarded.
 7. Only when Tester passed AND Reviewer approved -> Primary Agent commits only related changes, calls `hulane_authorize(git-push)`, and performs one authorized push.
@@ -93,4 +94,4 @@ Use MCP for Work Item Issue creation, canonical state, projection, authorization
 
 Obsidian projections are read-only. ALL Obsidian projections MUST live under the target repository's `plan/` directory, never at the repository root: `plan/00_Dashboard/` (`首页.md` entry page, `研发控制台.md`, `研发看板.md`, `需求列表.md` — all pure Dataview views over frontmatter, never hand-written state), `plan/01_Requirements/`, `plan/02_Bugs/`. Machine state stays at `.hulane/state.json`. `plan/` may already contain human-maintained planning documents — never modify or delete them. Prefer keeping projections out of product-code commits by excluding only `/plan/00_Dashboard/`, `/plan/01_Requirements/`, `/plan/02_Bugs/`, and `/.hulane/` in `.git/info/exclude`; never exclude all of `plan/`.
 
-Work item notes follow `templates/obsidian/work-item-template.md`: H1 is `<ID> <中文标题>`; fixed Chinese H2 skeleton 背景/目标/功能范围/非范围/验收标准/Planner 摘要/GitHub/关联/Agent 执行记录; acceptance criteria are checkboxes and may only be checked with code, test, or Actions evidence; relations use `[[wikilinks]]` to other work items; no tags — classification comes from the `type` field plus directory. File names stay stable (`REQ-<issue-number>.md`, `BUG-<issue-number>.md`). Frontmatter is the single record: keep every field current, refresh `updated` on each sync, and query it in views instead of duplicating status in page text.
+Work item notes follow `templates/obsidian/work-item-template.md`: H1 is `<ID> <中文标题>`; fixed Chinese H2 skeleton 背景/目标/功能范围/非范围/验收标准/Planner 摘要/页面设计（仅 page_design_needed 工单）/GitHub/关联/Agent 执行记录; acceptance criteria are checkboxes and may only be checked with code, test, or Actions evidence; relations use `[[wikilinks]]` to other work items; no tags — classification comes from the `type` field plus directory. File names stay stable (`REQ-<issue-number>.md`, `BUG-<issue-number>.md`). Frontmatter is the single record: keep every field current, refresh `updated` on each sync, and query it in views instead of duplicating status in page text.

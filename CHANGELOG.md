@@ -5,6 +5,37 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-09-29
+
+### Added
+
+- New `hulane-designer` subagent: frontend page design as a first-class,
+  pre-code stage. `hulane-planner` now returns `page_design_needed` and
+  `design_targets` (true only for page-level frontend work — a new page, a
+  layout/skeleton overhaul, or the repository's first use of an archetype;
+  small intake items never trigger it). For triggered items the Primary
+  Agent dispatches the designer before Gate A: it reads the repository's
+  frontend UI guidelines, the design token sheet, and at most two
+  same-archetype reference pages, then produces a structured Chinese design
+  spec (at most 150 lines: 目标页与归型 / 分区布局 with a
+  region-to-component/token mapping table / 交互与状态 including loading,
+  empty, error and destructive-action confirmation / 文案要点 / 偏离声明)
+  plus an on-demand self-contained HTML prototype (new pages or layout
+  overhauls only, at most 2000 lines) parked in the git-excluded
+  `.hulane/designs/<ID>.html`. The design spec is posted as a GitHub Issue
+  comment so Gate A approves requirement, plan and page design together —
+  no new state-machine state and no extra human stop; after approval the
+  prototype ships with the implementation PR as `docs/designs/<ID>.html`.
+  New visual vocabulary requires an explicit deviation declaration for the
+  human Gate A decision; reviewer treats undeclared deviations from the
+  approved design as blocking findings, and coder/tester/reviewer dispatch
+  prompts now carry the approved design_spec. The designer runs on its own
+  pinned model via the agent frontmatter `model:` field
+  (`…/kimi-for-coding`) to spend design tokens on the Kimi plan instead of
+  the main subscription; if that dispatch fails, the orchestrator falls
+  back to the session model via the general-purpose agent and records
+  `designer_model: session-fallback`.
+
 ## [3.3.1] - 2026-09-28
 
 ### Fixed

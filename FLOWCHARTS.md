@@ -2,7 +2,7 @@
 
 配套《Hulane_ZCode_AI_Dev_Workflow.md》的操作流程图集。状态机原图见该文档第 5 节；
 本文按"需求 → 实现 → 合并 → 交付"补齐各阶段的操作流、守卫机制与断线恢复。
-依据 V3.0.1 的 `skills/hulane-development/SKILL.md`、`docs/IMAGE_DELIVERY.md`、
+依据 V3.4.0 的 `skills/hulane-development/SKILL.md`、`docs/IMAGE_DELIVERY.md`、
 `commands/*` 与 `agents/*` 整理。
 
 ---
@@ -39,7 +39,9 @@ flowchart TD
   SM --> OWI["hulane_open_work_item：<br>先建 GitHub Issue → 派生 REQ/BUG 编号<br>→ 落状态与投影，写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）"]
   PLN --> OWI
   OWI --> V["核对返回的 Issue 标题/正文<br>与 waiting_approval 状态"]
-  V --> GA{{"Gate A：waiting_approval，<br>停止——不建分支、不改业务代码"}}
+  V -->|"page_design_needed=true"| DSN["只读派发 hulane-designer<br>（agent frontmatter 钉在 Kimi）：<br>读 UI 规范 + 令牌 + ≤2 个同类参考页，<br>产出设计说明（≤150 行，含偏离声明）<br>与按需 HTML 原型（.hulane/designs/，<br>git 排除）；设计说明评论到 Issue"]
+  V -->|"不需要页面设计"| GA
+  DSN --> GA{{"Gate A：waiting_approval，<br>需求 + 方案 + 页面设计一并审批，<br>停止——不建分支、不改业务代码"}}
   GA -->|"/hulane_approve：Issue 上评论批准<br>→ approve_requirement"| RDY["ready"]
 ```
 
@@ -50,6 +52,9 @@ flowchart TD
   Coder 阶段发现范围膨胀会立即把 size 打回 standard 并补派 planner。
 - 发版策略在立项时固化：只有用户明确要求本次出镜像才设
   `delivery_required=true、skip_allowed=false`。
+- 页面设计并入 Gate A 审批包，不新增人工停点；未触发设计的条目
+  （含全部 small）零设计开销。设计钉死既有原型/组件/令牌，新视觉词汇
+  必须附偏离声明由人工裁决；Kimi 派发失败自动降级会话模型并注明。
 
 ---
 
@@ -185,6 +190,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   ORCH["主 Agent = Orchestrator<br>唯一持有 MCP 控制面与 GitHub 写权限"] --> PL["hulane-planner<br>（只读；小需求可跳过）"]
+  ORCH --> DS["hulane-designer<br>（只读业务代码；固定 Kimi 模型；<br>原型只写 .hulane/designs/）"]
   ORCH --> CO["hulane-coder<br>（worktree 内唯一写者）"]
   ORCH --> TE["hulane-tester"]
   ORCH --> RE["hulane-reviewer（只读）"]
@@ -196,7 +202,7 @@ flowchart TD
 
 - 子代理永远不得再派生子代理。
 - 子代理工具清单不含 MCP 控制面工具，永不接触状态变更与授权。
-- Planner 保持只读；Coder、Tester、Reviewer 只在记录的 worktree 路径内活动。
+- Planner 与 Designer 保持只读（Designer 仅可写 `.hulane/designs/` 原型）；Coder、Tester、Reviewer 只在记录的 worktree 路径内活动。
 
 ---
 

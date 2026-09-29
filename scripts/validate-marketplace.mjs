@@ -109,7 +109,7 @@ const agents = filesIn("hulane/agents", ".md");
 const skillFiles = walk("hulane/skills").filter((name) => name.endsWith("/SKILL.md"));
 
 assert(commands.length === 8, `expected 8 commands, found ${commands.length}`);
-assert(agents.length === 5, `expected 5 agents, found ${agents.length}`);
+assert(agents.length === 6, `expected 6 agents, found ${agents.length}`);
 assert(skillFiles.length === 1, `expected 1 skill, found ${skillFiles.length}`);
 
 for (const name of commands) {

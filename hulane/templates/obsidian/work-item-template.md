@@ -72,6 +72,9 @@ next_action: human_approval
 ## Planner 摘要
 <!-- dispatch hulane-planner 后回填：拆解结论与风险。 -->
 
+## 页面设计
+<!-- 仅 page_design_needed 工单回填：hulane-designer 的设计说明（含偏离声明）与原型路径；Gate A 随需求与方案一并审批。 -->
+
 ## GitHub
 - Issue：
 - PR：
@@ -82,4 +85,4 @@ next_action: human_approval
 <!-- 用 wikilink 关联其他工单，如 [[REQ-123]]、[[BUG-456]]；无关联可留空。 -->
 
 ## Agent 执行记录
-<!-- 按 planner / coder / tester / reviewer / build-checker 顺序追加结论与证据链接。 -->
+<!-- 按 planner / designer / coder / tester / reviewer / build-checker 顺序追加结论与证据链接。 -->
