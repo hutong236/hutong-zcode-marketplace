@@ -39,9 +39,16 @@ flowchart TD
   SM --> OWI["hulane_open_work_item：<br>先建 GitHub Issue → 派生 REQ/BUG 编号<br>→ 落状态与投影，写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）"]
   PLN --> OWI
   OWI --> V["核对返回的 Issue 标题/正文<br>与 waiting_approval 状态"]
-  V -->|"page_design_needed=true"| DSN["只读派发 hulane-designer<br>（agent frontmatter 钉在 Kimi）：<br>读 UI 规范 + 令牌 + ≤2 个同类参考页，<br>产出设计说明（≤150 行，含偏离声明）<br>与按需 HTML 原型（.hulane/designs/，<br>git 排除）；设计说明评论到 Issue"]
+  V -->|"page_design_needed=true"| DSN["编排者生成种子串 + 收集品味参考，<br>只读派发 hulane-designer（钉在 Kimi）：<br>读 UI 规范 + 令牌 + ≤2 个同类参考页，<br>种子串衍生设计方向，产出设计说明（≤150 行，<br>含偏离声明）与按需 HTML 原型<br>（.hulane/designs/，git 排除）"]
   V -->|"不需要页面设计"| GA
-  DSN --> GA{{"Gate A：waiting_approval，<br>需求 + 方案 + 页面设计一并审批，<br>停止——不建分支、不改业务代码"}}
+  DSN --> CRT{"原型存在且会话<br>有渲染能力？"}
+  CRT -->|否| NT["记录 design_critic:<br>skipped-no-renderer"]
+  CRT -->|是| SHOT["编排者渲染原型截图为 PNG<br>（桌面视口 + 按需明暗主题）"]
+  SHOT --> CR["全新上下文只读派发 hulane-design-critic：<br>仅给截图 + 一段设计意图，/10 打分<br>+ 具体修改指令"]
+  CR --> SC{"≥9/10？"}
+  SC -->|否，且 <3 轮| DSN
+  SC -->|是 或 3 轮用尽| NT
+  NT --> GA{{"Gate A：waiting_approval，<br>需求 + 方案 + 页面设计（含评分历史）<br>一并审批，停止——不建分支、不改业务代码"}}
   GA -->|"/hulane_approve：Issue 上评论批准<br>→ approve_requirement"| RDY["ready"]
 ```
 
@@ -55,6 +62,9 @@ flowchart TD
 - 页面设计并入 Gate A 审批包，不新增人工停点；未触发设计的条目
   （含全部 small）零设计开销。设计钉死既有原型/组件/令牌，新视觉词汇
   必须附偏离声明由人工裁决；Kimi 派发失败自动降级会话模型并注明。
+- 设计回环（V3.5.0 起）：种子串破默认审美，critic 只看渲染截图在全新上下文
+  打分（<9/10 回炉修订，最多 3 轮），评分历史随设计说明一并进审批包；
+  会话无渲染能力时降级为单趟设计并注明 skipped-no-renderer。
 
 ---
 
@@ -191,6 +201,8 @@ flowchart TD
 flowchart TD
   ORCH["主 Agent = Orchestrator<br>唯一持有 MCP 控制面与 GitHub 写权限"] --> PL["hulane-planner<br>（只读；小需求可跳过）"]
   ORCH --> DS["hulane-designer<br>（只读业务代码；固定 Kimi 模型；<br>原型只写 .hulane/designs/）"]
+  ORCH --> DC["hulane-design-critic<br>（只读渲染截图；全新上下文打分，<br>跟随会话模型）"]
+  DS <-.->|"原型 → 截图 → 评分<br>（<9/10 回炉，最多 3 轮）"| DC
   ORCH --> CO["hulane-coder<br>（worktree 内唯一写者）"]
   ORCH --> TE["hulane-tester"]
   ORCH --> RE["hulane-reviewer（只读）"]
@@ -202,7 +214,7 @@ flowchart TD
 
 - 子代理永远不得再派生子代理。
 - 子代理工具清单不含 MCP 控制面工具，永不接触状态变更与授权。
-- Planner 与 Designer 保持只读（Designer 仅可写 `.hulane/designs/` 原型）；Coder、Tester、Reviewer 只在记录的 worktree 路径内活动。
+- Planner 与 Designer 保持只读（Designer 仅可写 `.hulane/designs/` 原型）；Design Critic 只读截图；Coder、Tester、Reviewer 只在记录的 worktree 路径内活动。
 
 ---
 

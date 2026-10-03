@@ -1,15 +1,15 @@
 ---
 name: hulane-development
-description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pull Request、测试、评审、GitHub Actions 与 Docker 镜像交付任务。ZCode 主 Agent 担任编排者，插件子代理分别负责规划、编码、测试、评审与构建核验。
+description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pull Request、测试、评审、GitHub Actions 与 Docker 镜像交付任务。ZCode 主 Agent 担任编排者，插件子代理分别负责规划、页面设计、设计评估、编码、测试、评审与构建核验。
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.4.0
+  version: 3.5.0
 ---
 
 # Hulane Development Skill
 
-The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `hulane-planner`, `hulane-designer`, `hulane-coder`, `hulane-tester`, `hulane-reviewer`, `hulane-build-checker`. A subagent must never be asked to spawn another subagent.
+The active ZCode Primary Agent is the Orchestrator. Dispatch plugin subagents: `hulane-planner`, `hulane-designer`, `hulane-design-critic`, `hulane-coder`, `hulane-tester`, `hulane-reviewer`, `hulane-build-checker`. A subagent must never be asked to spawn another subagent.
 
 ## Human gates
 
@@ -53,7 +53,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 3. Classify the intake size. A small change (single-domain — pure frontend/UI, pure backend, or docs — expected to touch few files, no schema/API/auth/data-path change, risk low) may skip the `hulane-planner` dispatch: write the planner summary, risk, delivery policy, and acceptance criteria inline and pass `size: "small"` to `hulane_open_work_item`. Anything else dispatches `hulane-planner` read-only and uses `size: "standard"`. If small-scope work balloons during Coder, patch `size` back to `standard` and continue with full discipline. For frontend/UI or backend Go items, ground the plan and its acceptance criteria in the repository's own guidelines documents (for example `docs/frontend-ui-guidelines.md`, `docs/backend-guidelines.md`) — for frontend: page archetype, design-token-only colors, light/dark theme parity, and the accessibility baseline; for backend: layering boundaries, error wrapping and sentinel mapping, envelope and pagination, migration idempotency, and Swagger sync — whether the plan is written inline (small) or returned by `hulane-planner`.
 4. Call `hulane_open_work_item`; it creates the GitHub Issue first, derives REQ/BUG ID, persists machine state, and writes the projection.
 5. Verify the returned Issue title/body and waiting_approval state.
-6. When the Planner returned `page_design_needed: true`, dispatch `hulane-designer` (it runs on its own pinned model) with the work item ID, requirement text, Planner summary and design_targets; it stays read-only on business code and may only write a prototype under `.hulane/designs/<ID>.html` (git-excluded). Post the returned design_spec as one GitHub Issue comment so Gate A reviews requirement, plan and page design together, and mirror it into the projection's 页面设计 section. If the designer dispatch fails because its pinned model is unavailable, tell the user once and re-dispatch the same design brief through the general-purpose agent on the session model, recording `designer_model: session-fallback` in the projection note. Design changes requested after Gate A approval are a scope decision: confirm with the human and record the revision.
+6. When the Planner returned `page_design_needed: true`, run the page-design loop before Gate A. (a) Generate a seed string (`openssl rand -hex 8`) and gather any taste/inspiration references the human gave; dispatch `hulane-designer` (it runs on its own pinned model) with the work item ID, requirement text, Planner summary, design_targets, the seed string and those references; it stays read-only on business code and may only write a prototype under `.hulane/designs/<ID>.html` (git-excluded). If the designer dispatch fails because its pinned model is unavailable, tell the user once and re-dispatch the same design brief through the general-purpose agent on the session model, recording `designer_model: session-fallback` in the projection note. (b) When a prototype exists and the session has browser/screenshot capability, render `.hulane/designs/<ID>.html` to PNG under `.hulane/designs/` (desktop viewport plus dark theme where applicable) and dispatch `hulane-design-critic` (session model, fresh context) with only the screenshot paths and one short paragraph of design intent — never code or history. Score below 9/10: re-dispatch `hulane-designer` with the critic's `revision_directive`, re-screenshot, re-critique; at most 3 rounds. When the session has no rendering capability, record `design_critic: skipped-no-renderer` and continue with the single-pass design. (c) Post the final design_spec together with the critic score history as one GitHub Issue comment so Gate A reviews requirement, plan and page design together, and mirror it into the projection's 页面设计 section. Design changes requested after Gate A approval are a scope decision: confirm with the human and record the revision.
 7. Persist Planner delivery policy with an on-demand release cadence: the default is `delivery_required: false` and `skip_allowed: true`, so a merged change ships no image until the user explicitly asks to release. Use `delivery_required: true` and `skip_allowed: false` only when the user explicitly requests an image/release for this item.
 8. Write/update local read-only Markdown projection.
 9. Set `status: waiting_approval`, `human_approval: required`.

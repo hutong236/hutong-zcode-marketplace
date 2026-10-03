@@ -5,6 +5,45 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-04
+
+### Added
+
+- New `hulane-design-critic` subagent: an evaluation gate inside the page-design
+  loop. The Primary Agent renders the approved-stage prototype to PNG with the
+  session's browser tooling and dispatches the critic in a fresh context with
+  only the screenshots plus one short paragraph of design intent — no code, no
+  history. The critic scores the design out of 10 against a top-studio quality
+  bar, actively penalizing AI tells (non-functional gradients/glows, redundant
+  labels, over-decoration, default purple-gradient layouts), and returns tight,
+  specific, actionable feedback plus a `revision_directive`. Scores below 9/10
+  send the design back to `hulane-designer` for revision (at most 3 rounds);
+  the score history is posted with the design spec as one GitHub Issue comment
+  and mirrored into the projection, so Gate A reviews requirement, plan, page
+  design and evaluation together — still no extra human stop. The critic is
+  read-only (screenshots only), follows the session model, and never spawns
+  subagents.
+
+### Changed
+
+- `hulane-designer` refactored around a Discover/Define/Deliver structure: the
+  Orchestrator injects a random `seed_string` (`openssl rand -hex 8`) plus any
+  human taste/inspiration references to break default aesthetic patterns (the
+  derived direction is documented in a new 设计方向 spec section without
+  revealing the seed); hard constraints now also require cutting everything
+  that adds no value (no non-functional gradients/glows/decorations, prefer
+  native or existing components, tighter copy); the designer accepts critic
+  `revision_directive`s and revises surgically, reporting a per-round
+  `revision_summary`. Output contract otherwise unchanged (designer_result /
+  design_spec / deviations / prototype_path), keeping Gate A and downstream
+  Coder/Tester/Reviewer integrations compatible.
+- Orchestration (`hulane-development` SKILL.md) and docs (root README,
+  FLOWCHARTS, workflow spec, plugin README, Obsidian template) updated for the
+  design loop; roster grows from 6 to 7 subagents. Degradation path: when the
+  session has no rendering capability the loop records
+  `design_critic: skipped-no-renderer` and the single-pass design proceeds to
+  Gate A as before.
+
 ## [3.4.0] - 2026-09-29
 
 ### Added

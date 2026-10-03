@@ -6,16 +6,16 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.4.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.5.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
-`hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、6 个子 Agent（planner / designer / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
+`hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
 
 可选伴侣插件：后端 Go 工单在生成/修改 Go 代码前由 `hulane-coder` 调用 `modern-go-guidelines` 插件的 `use-modern-go` 技能（市场 `goland-claude-marketplace`），按目标 Go 版本应用现代惯用法；未安装时流程会提示安装，并按仓库后端规范降级继续。
 
-前端页面级工单（新页面、布局/骨架改版、仓库首次使用某原型）在 Gate A 前由 `hulane-designer` 产出页面设计说明（区域→组件/令牌映射、交互状态、偏离声明，≤150 行）与按需单文件 HTML 原型，随需求与实现方案一并审批；设计产出只读业务代码，原型暂存 git 排除的 `.hulane/designs/`，批准后随实现 PR 以 `docs/designs/<ID>.html` 入库。`hulane-designer` 通过 agent frontmatter 的 `model:` 钉在 Kimi（`kimi-for-coding`）上以节省主套餐 token；换机或未配置该模型时把 `hulane/agents/hulane-designer.md` 里的 `model:` 改成本机 Provider/模型（`ListModels` 可查），或删掉该行回落会话模型，Kimi 派发失败时编排者也会自动降级为会话模型并注明 `session-fallback`。
+前端页面级工单（新页面、布局/骨架改版、仓库首次使用某原型）在 Gate A 前由 `hulane-designer` 产出页面设计说明（设计方向、区域→组件/令牌映射、交互状态、偏离声明，≤150 行）与按需单文件 HTML 原型，随需求与实现方案一并审批；设计产出只读业务代码，原型暂存 git 排除的 `.hulane/designs/`，批准后随实现 PR 以 `docs/designs/<ID>.html` 入库。设计流程吸收"AI 世界级设计师"方法：编排者注入随机种子串打破默认审美、designer 混入人工品味参考，产出后由编排者渲染截图、派 `hulane-design-critic` 在全新上下文中只看图打分（/10，低于 9 分带具体修改指令回炉，最多 3 轮），评分历史随设计说明一并进 Gate A 审批包，不新增人工停点；会话无渲染能力时记录 `skipped-no-renderer` 降级为单趟设计。`hulane-designer` 通过 agent frontmatter 的 `model:` 钉在 Kimi（`kimi-for-coding`）上以节省主套餐 token；换机或未配置该模型时把 `hulane/agents/hulane-designer.md` 里的 `model:` 改成本机 Provider/模型（`ListModels` 可查），或删掉该行回落会话模型，Kimi 派发失败时编排者也会自动降级为会话模型并注明 `session-fallback`。`hulane-design-critic` 不钉模型，跟随会话模型。
 
 ## 在 ZCode 中添加
 

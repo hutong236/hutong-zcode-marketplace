@@ -1,8 +1,8 @@
 # Hulane 项目：ZCode AI 研发流水线规范
 
-**版本：** V3.4.0
+**版本：** V3.5.0
 
-**日期：** 2026-09-29
+**日期：** 2026-10-04
 
 **适用范围：** Hulane 项目研发
 
@@ -25,7 +25,7 @@ V2 将职责分成四层：
 | --- | --- |
 | Primary Agent | 唯一 Orchestrator；理解命令、调度 Worker、呈现人工 Gate |
 | `hulane-control` MCP | 状态迁移、GitHub 同步、worktree、一次性授权、交付证据核验 |
-| Subagents | Planner / Coder / Tester / Reviewer / Build Checker 的有界工作 |
+| Subagents | Planner / Designer / Design Critic / Coder / Tester / Reviewer / Build Checker 的有界工作 |
 | Hooks | Session 注入约束、PreToolUse 保护敏感操作、Stop 阻止虚假 Done |
 
 Subagent 不得启动 Subagent，也没有 MCP 控制面工具。
@@ -62,6 +62,14 @@ GitHub Issue 评论包含 `cmdb-dev-state:v2` 机器块，状态标签为
 6. 停在 `waiting_approval`。
 
 Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并。
+
+页面级前端工单（planner 标记 `page_design_needed: true`）在 Gate A 前走
+设计回环：orchestrator 生成种子串并收集人工品味参考，派发只读
+`hulane-designer`（钉在 Kimi）产出设计说明与按需原型（`.hulane/designs/`，
+git 排除）；原型由 orchestrator 渲染截图后派 `hulane-design-critic` 在全新
+上下文中只看图评分（/10），低于 9 分按具体修改指令回炉，最多 3 轮；评分
+历史随设计说明一并进 Gate A 审批包，不新增人工停点。会话无渲染能力时
+注明 `skipped-no-renderer` 降级为单趟设计。
 
 ## 4. 人工 Gate
 

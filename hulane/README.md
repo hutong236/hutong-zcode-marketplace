@@ -8,7 +8,7 @@ the control plane. GitHub Issue state is canonical, while local JSON and
 Obsidian Markdown are recoverable caches/projections.
 
 ```text
-Requirement → Issue → Human Approval → Isolated Worktree → Coder → Tester → Reviewer → PR → Merge
+Requirement → Issue → Designer → Design Critic（截图评分回环，仅页面级工单）→ Human Approval → Isolated Worktree → Coder → Tester → Reviewer → PR → Merge
   → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Close Issue → Done
 ```
 
