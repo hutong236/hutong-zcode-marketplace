@@ -51,7 +51,9 @@ const STATIC_TRANSITIONS = Object.freeze({
   merging: { pr_merged: "waiting_tag_confirm" },
   waiting_tag_confirm: { approve_tag: "building", approve_skip: "waiting_close", policy_skip: "waiting_close" },
   building: { image_verified: "waiting_close" },
-  waiting_close: { issue_closed: "done" },
+  // specs_synced 是 waiting_close 上的自环:记录规格同步证据,不改变状态,
+  // 但它是 spec_sync_required 工单 issue_closed 的硬前置
+  waiting_close: { specs_synced: "waiting_close", issue_closed: "done" },
 });
 
 const PATCH_FIELDS = new Set([
@@ -81,10 +83,31 @@ const PATCH_FIELDS = new Set([
   "sbom_status",
   "sbom_digest",
   "size",
+  "spec_sync_required",
+  "specs_commit_sha",
+  "spec_delta_dir",
+  "specs_synced",
   "tag_confirmation",
   "workflow_run_url",
   "worktree_path",
 ]);
+
+// 规格同步字段的写入通道收口:豁免只允许发生在 Gate A(approve_requirement),
+// 证据三件套只允许由 specs_synced 事件本身写入——否则任意事件带 patch 就能
+// 绕过 issue_closed / Done 的规格同步前置
+const SPEC_EXEMPTION_FIELDS = new Set(["spec_sync_required"]);
+const SPEC_EVIDENCE_FIELDS = new Set(["specs_synced", "specs_commit_sha", "spec_delta_dir"]);
+
+function assertPatchFieldOwnership(event, patch = {}) {
+  for (const key of Object.keys(patch)) {
+    if (SPEC_EXEMPTION_FIELDS.has(key) && event !== "approve_requirement") {
+      throw new Error(`Unsupported state patch field: ${key} (only approve_requirement may set it)`);
+    }
+    if (SPEC_EVIDENCE_FIELDS.has(key) && event !== "specs_synced") {
+      throw new Error(`Unsupported state patch field: ${key} (only the specs_synced event may set it)`);
+    }
+  }
+}
 
 function nowIso(now) {
   return (typeof now === "function" ? now() : new Date()).toISOString();
@@ -154,6 +177,12 @@ export function normalizeWorkItem(item) {
   if (!("pr_check_run_url" in next)) next.pr_check_run_url = null;
   if (!("size" in next)) next.size = "standard";
   if (!("legacy_completion" in next)) next.legacy_completion = historicalDone;
+  // V3.6.0 前立项的存量工单没有规格层字段:按祖父条款回填 false/false,
+  // 不被 specs_synced 前置阻塞(参照 legacy_completion 的存量豁免方式)
+  if (!("spec_sync_required" in next)) next.spec_sync_required = false;
+  if (!("specs_synced" in next)) next.specs_synced = false;
+  if (!("specs_commit_sha" in next)) next.specs_commit_sha = null;
+  if (!("spec_delta_dir" in next)) next.spec_delta_dir = null;
   return next;
 }
 
@@ -176,6 +205,11 @@ export function createWorkItem(input, now = () => new Date()) {
   if (!deliveryRequired && !String(input.delivery_reason ?? "").trim()) {
     throw new Error("Non-runtime delivery policy requires delivery_reason");
   }
+
+  // 规格同步要求:standard 默认必须(planner 显式豁免纯基建/纯文档条目),
+  // small 恒 false(快车道不吃规格层前置)
+  const specSyncRequired = asBoolean(input.spec_sync_required, size !== "small");
+  if (size === "small" && specSyncRequired) throw new Error("size small never requires spec sync");
 
   const timestamp = nowIso(now);
   const item = {
@@ -209,6 +243,10 @@ export function createWorkItem(input, now = () => new Date()) {
     merge_guard_mode: "unverified",
     required_checks_enforced: false,
     legacy_completion: false,
+    spec_sync_required: specSyncRequired,
+    specs_synced: false,
+    specs_commit_sha: null,
+    spec_delta_dir: null,
     tag_confirmation: "pending",
     build_status: "unknown",
     image: null,
@@ -276,6 +314,7 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   const evidence = String(payload.evidence ?? "").trim();
   if (!evidence) throw new Error("Every transition requires evidence");
   requireHumanActor(event, actor);
+  assertPatchFieldOwnership(event, payload.patch);
 
   if ((event === "approve_skip" || event === "policy_skip") && (item.delivery_required || !item.skip_allowed)) {
     throw new Error("skip is forbidden by the persisted delivery policy");
@@ -342,6 +381,19 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
     if (payload.patch?.provenance_status !== "verified") throw new Error("image_verified requires verified provenance evidence");
     if (!DIGEST_PATTERN.test(String(payload.patch?.sbom_digest ?? ""))) throw new Error("image_verified requires the SBOM attestation digest");
     if (!DIGEST_PATTERN.test(String(payload.patch?.provenance_digest ?? ""))) throw new Error("image_verified requires the provenance attestation digest");
+  }
+  if (event === "specs_synced") {
+    // 双层强制的状态机侧:证据三件套齐全才允许记录;specs_commit_sha 钉死
+    // merged_sha(方案 B:merge 后只对合并提交树做校验,不接受其它来源的规格树)
+    if (!SHA_PATTERN.test(String(item.merged_sha ?? ""))) throw new Error("specs_synced requires the recorded merged_sha");
+    if (!SHA_PATTERN.test(String(payload.patch?.specs_commit_sha ?? ""))) throw new Error("specs_synced requires a 40-character specs_commit_sha");
+    if (String(payload.patch?.specs_commit_sha) !== String(item.merged_sha)) {
+      throw new Error("specs_synced requires specs_commit_sha to equal the recorded merged_sha");
+    }
+    if (!String(payload.patch?.spec_delta_dir ?? "").trim()) throw new Error("specs_synced requires spec_delta_dir");
+  }
+  if (event === "issue_closed" && item.spec_sync_required && item.specs_synced !== true) {
+    throw new Error("issue_closed requires recorded specs_synced evidence while spec_sync_required");
   }
 
   const from = item.status;
@@ -428,6 +480,9 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   } else if (event === "image_verified") {
     next.build_status = "passed";
     next.next_action = "close_issue";
+  } else if (event === "specs_synced") {
+    next.specs_synced = true;
+    next.next_action = "close_issue";
   } else if (event === "issue_closed") {
     next.issue_state = "closed";
     next.next_action = "none";
@@ -476,6 +531,11 @@ export function validateWorkItem(item) {
     errors.push("passed PR checks require complete merge-guard evidence");
   }
   if (typeof item.legacy_completion !== "boolean") errors.push("invalid legacy_completion");
+  if (typeof item.spec_sync_required !== "boolean") errors.push("invalid spec_sync_required");
+  if (typeof item.specs_synced !== "boolean") errors.push("invalid specs_synced");
+  if (item.specs_synced === true && !SHA_PATTERN.test(String(item.specs_commit_sha ?? ""))) {
+    errors.push("recorded specs_synced requires a 40-character specs_commit_sha");
+  }
   if (item.delivery_required && item.skip_allowed) errors.push("runtime delivery cannot allow skip");
   if (!item.delivery_required && !String(item.delivery_reason ?? "").trim()) errors.push("delivery_reason required");
   if (!Array.isArray(item.history)) errors.push("history must be an array");
@@ -491,6 +551,10 @@ export function validateWorkItem(item) {
     if (item.pr_checks !== "passed") errors.push("done requires passed PR checks");
     if (!item.legacy_completion && !mergeGuardSatisfied(item)) errors.push("done requires a verified merge guard");
     if (!SHA_PATTERN.test(String(item.merged_sha ?? ""))) errors.push("done requires merged_sha");
+    if (item.spec_sync_required && item.specs_synced !== true) errors.push("done requires recorded specs_synced while spec_sync_required");
+    if (item.specs_synced === true && String(item.specs_commit_sha ?? "") !== String(item.merged_sha ?? "")) {
+      errors.push("done requires specs_commit_sha to equal merged_sha");
+    }
     if (item.delivery_required) {
       if (item.build_status !== "passed") errors.push("runtime delivery requires passed image build");
       if (!DIGEST_PATTERN.test(String(item.image_digest ?? ""))) errors.push("runtime delivery requires image digest");

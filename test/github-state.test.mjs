@@ -68,7 +68,7 @@ test("historical Done remains readable without fabricating V2 evidence", () => {
     build_status: "passed",
     image_digest: `sha256:${"b".repeat(64)}`,
   };
-  for (const field of ["required_checks_enforced", "registry_verified", "release_url", "sbom_status", "provenance_status", "sbom_digest", "provenance_digest", "legacy_completion"]) {
+  for (const field of ["required_checks_enforced", "registry_verified", "release_url", "sbom_status", "provenance_status", "sbom_digest", "provenance_digest", "legacy_completion", "spec_sync_required", "specs_synced", "specs_commit_sha", "spec_delta_dir"]) {
     delete historical[field];
   }
   const body = `<!-- cmdb-dev-state:v2 -->\n\n\`\`\`cmdb-state\n${JSON.stringify(historical)}\n\`\`\``;
@@ -76,6 +76,9 @@ test("historical Done remains readable without fabricating V2 evidence", () => {
   assert.equal(migrated.status, "done");
   assert.equal(migrated.legacy_completion, true);
   assert.equal(migrated.registry_verified, false);
+  // 规格层字段同样按祖父条款回填:存量 Done 不被 specs_synced 前置阻塞
+  assert.equal(migrated.spec_sync_required, false);
+  assert.equal(migrated.specs_synced, false);
 });
 
 function temporaryRoot() {

@@ -1,6 +1,6 @@
 # Hulane 项目：ZCode AI 研发流水线规范
 
-**版本：** V3.5.0
+**版本：** V3.6.0
 
 **日期：** 2026-10-04
 
@@ -144,12 +144,21 @@ stateDiagram-v2
   waiting_tag_confirm --> waiting_close: approve_skip
   waiting_tag_confirm --> waiting_close: policy_skip
   building --> waiting_close: image_verified
+  waiting_close --> waiting_close: specs_synced
   waiting_close --> done: issue_closed
 ```
 
 任意非终态可因证据充分的异常进入 `blocked`。`tests_failed`、
 `changes_requested`、`checks_failed` 合计自动返工最多 3 轮；下一次失败必须
 阻塞并等待人工处理。
+
+`specs_synced` 是 `waiting_close` 上的自环事件：spec_sync_required 工单在
+合并后、关单前必须经 `hulane_record_specs_synced` 对 merged_sha 提交树做
+规格结构校验并记录 `specs_commit_sha = merged_sha`；未记录时
+`issue_closed` 与 Done 被状态机拒绝，`gh issue close` 被 PreToolUse 守卫拒绝
+（双层强制）。small 工单恒 `spec_sync_required: false`，standard 默认 true
+（纯基建/纯文档由 planner 显式豁免并记录原因），V3.6.0 前的存量工单由
+normalizeWorkItem 祖父回填 false。
 
 ## 6. 独立 worktree 与权限护栏
 
@@ -238,6 +247,7 @@ Build Checker 必须独立核对：
 | `hulane_verify_pr_checks` | 核对 PR Head/检查并选择 GitHub 或控制面守卫 |
 | `hulane_authorize` | 发放一次性敏感操作令牌 |
 | `hulane_verify_delivery` | 交叉核验完整供应链证据 |
+| `hulane_record_specs_synced` | 校验 merged_sha 树内规格结构并记录 specs_synced |
 
 MCP stdio server 同时支持当前 `2026-07-28` 发现协议和旧版初始化协议。
 
@@ -259,7 +269,9 @@ MCP stdio server 同时支持当前 `2026-07-28` 发现协议和旧版初始化�
 ## 11. Definition of Done
 
 通用条件：Requirement approved、Coder completed、Tester passed、Reviewer
-approved、PR workflow checks passed、merge guard verified、PR merged、Issue closed。
+approved、PR workflow checks passed、merge guard verified、PR merged、Issue closed、
+规格同步完成（记录 `specs_synced` 且 `specs_commit_sha = merged_sha`，或工单
+被豁免/small/存量祖父）。
 
 运行时交付还必须具备：人工 Gate C、严格 SemVer Tag、merged SHA 一致、GHCR
 Digest 一致、Release 元数据一致、SBOM verified、provenance verified。

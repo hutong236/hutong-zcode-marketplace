@@ -8,8 +8,8 @@ the control plane. GitHub Issue state is canonical, while local JSON and
 Obsidian Markdown are recoverable caches/projections.
 
 ```text
-Requirement → Issue → Designer → Design Critic（截图评分回环，仅页面级工单）→ Human Approval → Isolated Worktree → Coder → Tester → Reviewer → PR → Merge
-  → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Close Issue → Done
+Requirement → Issue（含 spec delta 进 Gate A 审批包，仅 spec_sync_required 工单）→ Designer → Design Critic（截图评分回环，仅页面级工单）→ Human Approval → Isolated Worktree → Coder（PR 内完成 delta→主规格智能合并 + 决策史归档）→ Tester → Reviewer → PR → Merge
+  → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Spec Sync 校验（hulane_record_specs_synced，specs_commit_sha=merged_sha）→ Close Issue → Done
 ```
 
 Commands: `/hulane_check`, `/hulane_init`, `/hulane_dev`, `/hulane_approve`, `/hulane_merge_approve`, `/hulane_tag_approve`, `/hulane_status`, `/hulane_resume`.
@@ -34,6 +34,17 @@ merge (see `docs/IMAGE_DELIVERY.md`).
 Each Work Item runs in `.hulane/worktrees/<ID>`. Automatic implementation
 rework is limited to three rounds. A state-aware hook requires a short-lived,
 single-use authorization for `git push`, tag mutation, PR merge, and Issue close.
+
+Native capability specs (V3.6.0): behavior baselines live at
+`openspec/specs/<capability>/spec.md`; the Planner drafts an
+ADDED/MODIFIED/REMOVED/RENAMED delta into the Gate A package, Coder merges the
+delta into the main specs inside the implementation PR (decision history
+archived at `openspec/changes/archive/<ID>/`), and after merge
+`hulane_record_specs_synced` validates the merged tree before any Issue close.
+`spec_sync_required` defaults to true for standard items (explicit Planner
+exemption for pure-infra/docs), is always false for small ones, and legacy
+items are grandfathered — the state machine and the guard both reject closing
+an unsynced required item.
 
 Image delivery is complete only after the Actions artifact and GitHub Release
 metadata agree with the merged SHA and an independent GHCR digest lookup. The

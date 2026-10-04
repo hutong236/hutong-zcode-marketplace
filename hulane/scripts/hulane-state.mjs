@@ -40,7 +40,7 @@ function output(value, json = true) {
 function help() {
   output(`hulane-state commands:
   init [--repository owner/repo]
-  new --id REQ-123 --issue 123 --title ... --risk low [--size small] --delivery-required true [--skip-allowed false] [--delivery-reason ...]
+  new --id REQ-123 --issue 123 --title ... --risk low [--size small] --delivery-required true [--skip-allowed false] [--delivery-reason ...] [--spec-sync-required false]
   transition REQ-123 <event> --actor <identity> --evidence <text> [--patch JSON] [--to state]
   status [REQ-123]
   validate [REQ-123]
@@ -77,6 +77,7 @@ async function main() {
       delivery_required: flags.delivery_required ?? true,
       delivery_reason: flags.delivery_reason,
       skip_allowed: flags.skip_allowed ?? false,
+      spec_sync_required: flags.spec_sync_required,
       github_issue_url: flags.github_issue_url,
       actor: flags.actor ?? "orchestrator",
       evidence: flags.evidence,

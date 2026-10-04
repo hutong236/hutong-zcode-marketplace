@@ -10,6 +10,9 @@ import { writeStore } from "../hulane/scripts/lib/state-store.mjs";
 import { analyzeCommand, evaluateCommand } from "../hulane/hooks/guard.mjs";
 
 const clock = () => new Date("2026-08-31T12:00:00Z");
+const sha = "a".repeat(40);
+// 已记录 specs_synced 证据的 waiting_close 条目(标准工单默认 spec_sync_required=true)
+const specSynced = { specs_synced: true, specs_commit_sha: sha, spec_delta_dir: "openspec/changes/archive/REQ-25" };
 
 function repositoryWithItem(status, overrides = {}) {
   // git 输出真实路径,macOS 的 /var 软链需先解析才能与夹具路径一致
@@ -27,7 +30,7 @@ function repositoryWithItem(status, overrides = {}) {
 }
 
 test("execution authorizations are state-bound and single-use", () => {
-  const { root } = repositoryWithItem("waiting_close");
+  const { root } = repositoryWithItem("waiting_close", specSynced);
   const authorization = issueAuthorization(root, {
     id: "REQ-25",
     action: "issue-close",
@@ -106,7 +109,7 @@ test("guard classifies protected shell operations", () => {
 });
 
 test("state verification authorizes issue close and pr merge without a token", () => {
-  const { root } = repositoryWithItem("waiting_close");
+  const { root } = repositoryWithItem("waiting_close", specSynced);
   const item = verifyStateAuthorization(root, {
     action: "issue-close",
     cwd: root,
@@ -123,6 +126,28 @@ test("state verification authorizes issue close and pr merge without a token", (
     cwd: root,
     command: "gh issue edit 25",
   }), /requires the target number/);
+});
+
+test("issue close demands specs_synced evidence on spec_sync_required items (token and state-verified paths)", () => {
+  const { root } = repositoryWithItem("waiting_close");
+  assert.throws(() => issueAuthorization(root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock), /specs_synced/);
+  assert.throws(() => verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: 'gh issue close 25 --repo acme/demo --comment "Done"',
+  }), /specs_synced/);
+
+  const exempt = repositoryWithItem("waiting_close", { spec_sync_required: false });
+  const allowed = verifyStateAuthorization(exempt.root, {
+    action: "issue-close",
+    cwd: exempt.root,
+    command: 'gh issue close 25 --repo acme/demo --comment "Done"',
+  });
+  assert.equal(allowed.id, "REQ-25");
 });
 
 test("state verification never covers push or tag operations", () => {

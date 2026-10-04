@@ -2,7 +2,7 @@
 
 配套《Hulane_ZCode_AI_Dev_Workflow.md》的操作流程图集。状态机原图见该文档第 5 节；
 本文按"需求 → 实现 → 合并 → 交付"补齐各阶段的操作流、守卫机制与断线恢复。
-依据 V3.4.0 的 `skills/hulane-development/SKILL.md`、`docs/IMAGE_DELIVERY.md`、
+依据 V3.6.0 的 `skills/hulane-development/SKILL.md`、`docs/IMAGE_DELIVERY.md`、
 `commands/*` 与 `agents/*` 整理。
 
 ---
@@ -26,6 +26,8 @@ flowchart TD
 
 全程只有三个可能的人工停点：Gate A（必停）、Gate B（仅高风险）、Gate C（仅要求出镜像的条目）。
 默认发版策略下，一个小需求从提出到 Done 只停 Gate A 一次。
+spec_sync_required 工单（standard 默认开启，small 恒关闭）在关单前还必须通过
+规格校验与记录环节（第 5 节"规格校验与记录"节点），由状态机与守卫双层强制。
 
 ---
 
@@ -36,7 +38,7 @@ flowchart TD
   CL["检查仓库、分类请求"] --> SZ{"intake 分级"}
   SZ -->|"小需求：纯前端或文档改动、<br>预计只动少量文件、不碰 schema/API/<br>鉴权/数据链路、风险低"| SM["跳过规划子代理：<br>主 Agent 内联撰写规划摘要、风险、<br>发版策略、验收标准，记 size=small"]
   SZ -->|"其余：standard"| PLN["只读派发 hulane-planner"]
-  SM --> OWI["hulane_open_work_item：<br>先建 GitHub Issue → 派生 REQ/BUG 编号<br>→ 落状态与投影，写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）"]
+  SM --> OWI["hulane_open_work_item：<br>先建 GitHub Issue → 派生 REQ/BUG 编号<br>→ 落状态与投影，写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）<br>与规格策略（standard 默认 spec_sync_required=true）"]
   PLN --> OWI
   OWI --> V["核对返回的 Issue 标题/正文<br>与 waiting_approval 状态"]
   V -->|"page_design_needed=true"| DSN["编排者生成种子串 + 收集品味参考，<br>只读派发 hulane-designer（钉在 Kimi）：<br>读 UI 规范 + 令牌 + ≤2 个同类参考页，<br>种子串衍生设计方向，产出设计说明（≤150 行，<br>含偏离声明）与按需 HTML 原型<br>（.hulane/designs/，git 排除）"]
@@ -56,9 +58,17 @@ flowchart TD
 
 - 立项先有 GitHub Issue， Work Item 编号由 Issue 号派生（`REQ-<n>` / `BUG-<n>`）。
 - 小需求专属的简化只有"跳过 planner 派发"一处，其余状态机步骤与 standard 完全一致；
-  Coder 阶段发现范围膨胀会立即把 size 打回 standard 并补派 planner。
+  Coder 阶段发现范围膨胀会立即把 size 打回 standard 并补派 planner。注意
+  `spec_sync_required` 的写入通道在 Gate A 后已收口（仅 approve_requirement 可改），
+  膨胀工单保持 false，在投影 `## 规格关联` 记"spec debt（pending）"，
+  由下一个触碰该 capability 的 standard 工单吸收。
 - 发版策略在立项时固化：只有用户明确要求本次出镜像才设
   `delivery_required=true、skip_allowed=false`。
+- 规格层（V3.6.0 起）：planner 读取被触碰 capability 的主规格
+  （`openspec/specs/<capability>/spec.md`，缺失记 scope_questions），
+  产出 spec_delta_draft 并把验收标准从 Scenario 导出；delta 全文（过长时
+  摘要+路径）随 Gate A 审批包一并评审。纯基建/纯文档的 standard 工单由
+  planner 显式豁免（spec_sync_required=false）并记录原因；small 恒 false。
 - 页面设计并入 Gate A 审批包，不新增人工停点；未触发设计的条目
   （含全部 small）零设计开销。设计钉死既有原型/组件/令牌，新视觉词汇
   必须附偏离声明由人工裁决；Kimi 派发失败自动降级会话模型并注明。
@@ -86,6 +96,12 @@ flowchart TD
 要点：
 
 - 永远不向同一个 worktree 派两个写者；并行只发生在"Tester + 只读 Reviewer"。
+- spec_sync_required 工单的 Coder 同时在 worktree 内写决策史归档
+  （`openspec/changes/archive/<ID>/`）并在同一 PR 内完成 delta→主规格智能合并
+  （ADDED 追加/同名按 MODIFIED、MODIFIED 保留未提及 scenario、REMOVED 删整块、
+  RENAMED 改名；只改触碰到的 capability）。
+- Tester 以 delta Scenario 为用例来源并回报 scenario→覆盖矩阵；
+  Reviewer 做 diff 与 delta 声明行为的行为对照。
 - `tests_failed`、`changes_requested`、`checks_failed` 合计自动返工最多 3 轮，
   第 4 次失败必须阻塞等人工。
 - 推送是受守卫保护的特权操作：token 一次性、命令形状精确、禁止批量合并多条操作。
@@ -119,14 +135,16 @@ flowchart TD
 flowchart TD
   MR(["pr_merged 已记录"]) --> POL{"发版策略"}
   POL -->|"默认：delivery_required=false<br>且 skip_allowed=true"| PS["policy_skip：引用 Gate A 批准证据<br>（Issue 号、批准人、delivery_reason），<br>无人工停"]
-  PS --> C1["关 Issue（状态核验，无 token）<br>记录 issue_closed → Done"]
+  PS --> SPEC{"规格校验与记录<br>spec_sync_required？"}
+  SPEC -->|"是且未记录<br>hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>merged_sha 树结构校验通过<br>→ 记录 specs_synced（自环）"| C1["关 Issue（状态核验，无 token）<br>记录 issue_closed → Done"]
+  SPEC -->|"否（small / 豁免 / 存量祖父）"| C1
   POL -->|"delivery_required=true"| GAC{{"Gate C：waiting_tag_confirm，停止"}}
   GAC -->|"/hulane_tag_approve ID vX.Y.Z"| TAGP["approve_tag → 进入 tag 路径（图 6）"]
   GAC -->|"/hulane_tag_approve ID skip"| SK["approve_skip：记录人工确认与理由，<br>build_status=skipped（仅 skip_allowed 时有效）"]
-  SK --> C2["关 Issue → Done（无镜像证据发版）"]
+  SK --> SPEC
   EARLY["用户在 waiting_human_merge 提前<br>发出 /hulane_tag_approve"] -.->|"这一次人工确认同时覆盖 Gate B+C：<br>checks 通过后先 approve_merge 合并，<br>再于同回合继续 tag 路径"| TAGP
   C1 --> HK["清理 worktree：git worktree remove（禁 --force）<br>+ git branch -d"]
-  C2 --> HK
+  TAGP -.->|"镜像核验通过后同样过规格校验<br>（图 6 SPEC 节点）再关单"| HK
 ```
 
 要点：
@@ -135,6 +153,10 @@ flowchart TD
 - 手动 `skip` 只是给"会话死在合并与关单之间"这类卡在 waiting_tag_confirm
   的条目的人工兜底。
 - 镜像构建 workflow 缺失永远不构成自动 skip 的理由。
+- 规格校验与记录是三条关单路径（policy_skip / approve_skip / tag 镜像核验后）
+  共用的硬前置：spec_sync_required 且 specs_synced 未记录时，状态机拒绝
+  issue_closed、守卫拒绝 gh issue close；结构非法规格在
+  hulane_record_specs_synced 处被拒绝，状态不动。
 
 ---
 
@@ -156,7 +178,9 @@ flowchart TD
   Q -->|"失败"| FAIL["记 block，Issue 保持打开"]
   BC -->|"全部证据一致"| VD["hulane_verify_delivery<br>记录 image_verified"]
   BC -->|"任一环节对不上"| FAIL
-  VD --> C3["关 Issue → Done → 清理 worktree"]
+  VD --> SPEC{"规格校验与记录<br>spec_sync_required？"}
+  SPEC -->|"是且未记录：hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)"| C3["关 Issue → Done → 清理 worktree"]
+  SPEC -->|"否"| C3
 ```
 
 核心原则：Actions 绿勾与日志成功永远不是交付证据；只有 Actions artifact、
@@ -233,7 +257,10 @@ flowchart TD
   S6 -->|"true"| S7["停止，等人工确认 tag"]
   S6 -->|"false（skip_allowed）"| S8["补记 policy_skip（引用 Gate A 批准）<br>→ 关 Issue → Done"]
   B -->|"building"| S9["gh run list 查一次：已结束 → Build Checker；<br>仍在跑 → 重挂后台 watch"]
-  B -->|"waiting_close"| S10["一次状态核验关 Issue"]
+  B -->|"waiting_close"| S9a{"spec_sync_required<br>且 specs_synced 未记录？"}
+  S9a -->|"是"| S9b["hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>校验 merged_sha 树结构并记录"]
+  S9a -->|"否"| S10["一次状态核验关 Issue"]
+  S9b --> S10
   B -->|"blocked"| S11["需要解决证据才能继续"]
   S8 --> HK["清理已合并的 worktree 与分支"]
   S10 --> HK

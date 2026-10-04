@@ -25,6 +25,7 @@ V2 separates orchestration, authority, execution, and evidence.
 | `hulane_verify_pr_checks` | Verify the exact PR head/check and select the available merge guard |
 | `hulane_authorize` | Issue one state-bound token for push/tag; merge and Issue close are state-verified by the guard |
 | `hulane_verify_delivery` | Cross-check merged SHA, Actions, Release, GHCR, SBOM and provenance |
+| `hulane_record_specs_synced` | Validate the merged_sha tree's openspec/specs structure, then record specs_synced |
 
 The stdio server supports current stateless MCP discovery (`2026-07-28`) and
 legacy initialization-based clients. Tool input is validated in the server,
@@ -41,6 +42,11 @@ not assumed from the client.
   low/medium-risk merges to completion; high risk still stops for a human.
 - Gate C is required after merge before tag/image delivery or an explicitly
   policy-allowed non-runtime skip.
+- Spec sync is required before Issue close: a spec_sync_required item must pass
+  the merged-tree spec validation through `hulane_record_specs_synced`
+  (specs_commit_sha = merged_sha); the state machine and the guard both reject
+  the close otherwise. Small items are always exempt, standard Planner-exempted
+  pure-infra/docs items record the reason, and legacy items are grandfathered.
 - Automatic rework is limited to three rounds; the next failure blocks.
 - Runtime Done requires a closed Issue, merged SHA, verified GHCR digest,
   matching Release metadata, and immutable SBOM/provenance attestation digests.

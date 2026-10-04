@@ -5,6 +5,68 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-04
+
+### Added
+
+- Native capability spec layer (OpenSpec-compatible): business repositories
+  keep behavior baselines at `openspec/specs/<capability>/spec.md` (one H1
+  `<capability> Specification`, `## Purpose`, `## Requirements`, every
+  requirement a SHALL statement with at least one WHEN/THEN scenario; Chinese
+  content allowed). `hulane-planner` reads the touched capabilities' main
+  specs and returns `spec_sync_required` / `affected_capabilities` /
+  `spec_delta_draft`, acceptance criteria are exported from the delta
+  scenarios, and the delta's full text joins the Gate A approval package.
+  `hulane-coder` parks the decision history at
+  `openspec/changes/archive/<REQ-ID>/` and completes the delta-to-main-spec
+  smart merge inside the implementation PR (ADDED appends, MODIFIED keeps
+  untouched scenarios, REMOVED deletes the block, RENAMED renames; only
+  touched capabilities are rewritten). `hulane-tester` reports a
+  scenario-to-coverage matrix and `hulane-reviewer` reviews the
+  diff-versus-delta behavior correspondence.
+- New 13th MCP tool `hulane_record_specs_synced`: validates the
+  `openspec/specs/` structure inside the exact `specs_commit_sha` commit tree
+  through Git objects (not the working tree) and records the `specs_synced`
+  self-loop event on `waiting_close` with `specs_commit_sha = merged_sha`;
+  `hulane_transition` rejects `specs_synced` as a reserved event.
+- New pure validator `scripts/lib/specs.mjs` (no IO) plus
+  `templates/openspec/capability-spec.template.md` and `delta-spec.template.md`
+  format anchors (agent reference only; never auto-installed into business
+  repositories).
+- Dogfood bootstrap: this repository's own new capability lives at
+  `openspec/specs/hulane-spec-layer/spec.md` with the REQ-3 decision history
+  archived at `openspec/changes/archive/REQ-3/` as the first real sample of
+  the format.
+
+### Changed
+
+- State machine: `waiting_close` gains the `specs_synced` self-loop; the
+  work-item state carries `spec_sync_required` (standard defaults true with
+  Planner exemption for pure-infra/docs, small always false), `specs_synced`,
+  `specs_commit_sha`, and `spec_delta_dir`. `issue_closed` and the Done
+  invariant refuse spec_sync_required items without recorded sync evidence,
+  and the evidence/exemption fields are write-restricted to their owning
+  events (no patch bypass). `normalizeWorkItem` grandfathers pre-V3.6.0 items
+  with `spec_sync_required: false` / `specs_synced: false`.
+- Guard: `gh issue close` is rejected (token and state-verified paths share
+  one assertion) while `spec_sync_required` is true and `specs_synced` is
+  unrecorded — the spec-sync precondition is enforced by the state machine
+  and the PreToolUse guard, not prompt discipline. No specs-sync-push
+  authorization action was added.
+- Obsidian projections expose the four new frontmatter fields and a
+  `## 规格关联` skeleton (capability wikilinks, delta path, specs_commit_sha,
+  sync status); existing note bodies are preserved on refresh.
+- PR checks runner (template and repository copy, kept identical) gained an
+  optional soft gate: `openspec validate --specs` runs only when an
+  `openspec/` directory exists and the CLI is installed, otherwise it is
+  skipped without failing.
+- Orchestration (SKILL, `/hulane_dev`, `/hulane_approve`, `/hulane_resume`,
+  `/hulane_status`, `/hulane_tag_approve`) and docs (root README, plugin
+  README, FLOWCHARTS, workflow spec, V2 architecture, VALIDATION) updated for
+  the spec layer; `hulane_open_work_item` accepts the optional
+  `spec_sync_required` policy flag; marketplace validation expects 13 tools
+  and guards the spec-layer wording/templates.
+
 ## [3.5.0] - 2026-10-04
 
 ### Added
