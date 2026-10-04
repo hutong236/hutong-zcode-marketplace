@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { applyEvent, createWorkItem, validateWorkItem } from "../scripts/lib/state-machine.mjs";
 import { findControlRoot, getItem, initializeRepositoryState, putItem, readStore } from "../scripts/lib/state-store.mjs";
 import { hydrateItemFromGitHub, resolveRepository, runGh, syncItemToGitHub } from "../scripts/lib/github-state.mjs";
@@ -8,10 +9,12 @@ import { runPreflight } from "../scripts/lib/preflight.mjs";
 import { initializeTargetRepository } from "../scripts/lib/initializer.mjs";
 import { writeProjection } from "../scripts/lib/projection.mjs";
 import { DEFAULT_PR_CHECK, verifyPullRequestChecks } from "../scripts/lib/pr-checks.mjs";
+import { isCapabilitySpecPath, validateSpecFile } from "../scripts/lib/specs.mjs";
 
 const objectSchema = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string", minLength: 1 };
 const id = { type: "string", pattern: "^(REQ|BUG)-[1-9][0-9]*$" };
+const commitSha = { type: "string", pattern: "^[0-9a-fA-F]{40}$" };
 
 export const TOOL_DEFINITIONS = Object.freeze([
   {
@@ -37,6 +40,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
       delivery_required: { type: "boolean" },
       delivery_reason: { type: "string" },
       skip_allowed: { type: "boolean" },
+      spec_sync_required: { type: "boolean" },
       planner_summary: { type: "string" },
       acceptance_criteria: { type: "array", items: text, minItems: 1 },
       repository: { type: "string", pattern: "^[^/]+/[^/]+$" },
@@ -114,6 +118,16 @@ export const TOOL_DEFINITIONS = Object.freeze([
     }, ["id", "workflow_metadata", "release_metadata", "registry_digest", "release_url", "sbom_digest", "provenance_digest", "actor", "evidence"]),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
+  {
+    name: "hulane_record_specs_synced",
+    description: "Validate the openspec/specs capability-spec structure inside the exact specs_commit_sha tree (Git object read, not working tree), then record the specs_synced evidence event. specs_commit_sha must equal the recorded merged_sha.",
+    inputSchema: objectSchema({
+      id, actor: { const: "orchestrator" }, evidence: text,
+      specs_commit_sha: commitSha, spec_delta_dir: text,
+      sync: { type: "boolean", default: true }, repository: { type: "string" },
+    }, ["id", "actor", "evidence", "specs_commit_sha", "spec_delta_dir"]),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
 ]);
 
 function repositoryFor(root, explicit) {
@@ -128,6 +142,36 @@ function persist(root, item, { sync = true, repository, projection = {} } = {}) 
   const projectionFile = writeProjection(root, item, projection);
   const github = sync ? syncItemToGitHub(item, { repository: repositoryFor(root, repository), cwd: root }) : null;
   return { item, projection_file: projectionFile, github };
+}
+
+// 用 git 对象库直接读 specs_commit_sha 提交树里的 openspec/specs 主规格并做
+// 结构校验——不依赖工作区状态(合并发生在远端,本地工作区可能还没更新)。
+// 提交不在本地对象库时先 fetch 一次默认远端再重试。
+function validateSpecsTreeAtCommit(root, commitSha) {
+  const git = (args) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${(result.stderr || result.stdout).trim()}`);
+    return result.stdout;
+  };
+  const commitKnown = () => spawnSync("git", ["cat-file", "-e", `${commitSha}^{commit}`], { cwd: root }).status === 0;
+  if (!commitKnown()) {
+    git(["fetch", "origin"]);
+    if (!commitKnown()) throw new Error(`commit ${commitSha} is not present in the local Git repository after fetch`);
+  }
+  const specFiles = git(["ls-tree", "-r", "--name-only", commitSha, "--", "openspec/specs/"])
+    .split(/\r?\n/).map((line) => line.trim()).filter(isCapabilitySpecPath);
+  if (!specFiles.length) {
+    throw new Error(`commit ${commitSha} carries no openspec/specs/<capability>/spec.md capability specs`);
+  }
+  const validated = [];
+  for (const file of specFiles) {
+    const result = validateSpecFile(file, git(["show", `${commitSha}:${file}`]));
+    if (!result) throw new Error(`${file} in commit ${commitSha} is not a recognizable spec document`);
+    validated.push(result.kind === "capability"
+      ? { file, capability: result.capability, requirements: result.requirements.length }
+      : { file, groups: result.groups.map((group) => group.group) });
+  }
+  return { commit: commitSha, specs: validated };
 }
 
 function liveFacts(root, item, repository) {
@@ -191,6 +235,7 @@ export function callTool(name, args = {}, context = {}) {
         delivery_required: args.delivery_required,
         delivery_reason: args.delivery_reason,
         skip_allowed: args.skip_allowed,
+        spec_sync_required: args.spec_sync_required,
         actor: "orchestrator",
         evidence: `GitHub Issue #${issueNumber} created before implementation`,
       });
@@ -206,7 +251,7 @@ export function callTool(name, args = {}, context = {}) {
   }
 
   if (name === "hulane_transition") {
-    if (["start_planning", "checks_passed", "image_verified"].includes(args.event)) {
+    if (["start_planning", "checks_passed", "image_verified", "specs_synced"].includes(args.event)) {
       throw new Error(`${args.event} is reserved for its dedicated MCP evidence tool`);
     }
     const item = getItem(root, args.id);
@@ -291,6 +336,22 @@ export function callTool(name, args = {}, context = {}) {
     });
     const next = applyEvent(item, "image_verified", { actor: args.actor, evidence: args.evidence, patch });
     return persist(root, next, { sync: args.sync !== false, repository: args.repository });
+  }
+
+  if (name === "hulane_record_specs_synced") {
+    const item = getItem(root, args.id);
+    if (item.specs_synced === true) throw new Error(`${args.id} has already recorded specs_synced`);
+    if (String(args.specs_commit_sha ?? "") !== String(item.merged_sha ?? "")) {
+      throw new Error("specs_commit_sha must equal the recorded merged_sha");
+    }
+    // 先校验 merged_sha 提交树里的主规格结构,非法即拒绝,不动状态
+    const specs_validation = validateSpecsTreeAtCommit(root, args.specs_commit_sha);
+    const next = applyEvent(item, "specs_synced", {
+      actor: args.actor,
+      evidence: args.evidence,
+      patch: { specs_commit_sha: args.specs_commit_sha, spec_delta_dir: args.spec_delta_dir },
+    });
+    return { specs_validation, ...persist(root, next, { sync: args.sync !== false, repository: args.repository }) };
   }
 
   throw new Error(`Unknown MCP tool: ${name}`);

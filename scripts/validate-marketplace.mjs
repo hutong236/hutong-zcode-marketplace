@@ -144,6 +144,18 @@ assert(/pull_request:/.test(prWorkflow), "PR checks workflow must run on pull_re
 assert(/Hulane PR Checks/.test(prWorkflow), "PR checks workflow name must remain stable");
 assert(fs.existsSync(path.join(root, "hulane/templates/github-actions/hulane-pr-checks.sh")),
   "PR checks runner template is missing");
+assert(/openspec validate --specs/.test(read("hulane/templates/github-actions/hulane-pr-checks.sh")),
+  "PR checks runner template is missing the optional openspec spec validation");
+assert(fs.existsSync(path.join(root, ".github/scripts/hulane-pr-checks.sh")),
+  "repository PR checks runner is missing");
+assert(read(".github/scripts/hulane-pr-checks.sh") === read("hulane/templates/github-actions/hulane-pr-checks.sh"),
+  "repository PR checks runner has drifted from its template");
+
+// 规格层模板锚点:主规格与 delta 模板必须存在,防格式漂移
+for (const template of ["capability-spec.template.md", "delta-spec.template.md"]) {
+  assert(fs.existsSync(path.join(root, "hulane/templates/openspec", template)),
+    `openspec spec template is missing: ${template}`);
+}
 
 const board = read("hulane/templates/obsidian/研发看板.md");
 for (const state of ["pr_checking", "waiting_human_merge", "waiting_tag_confirm", "waiting_close"]) {
@@ -162,6 +174,7 @@ for (const requiredFile of [
   "hulane/scripts/lib/pr-checks.mjs",
   "hulane/scripts/lib/projection.mjs",
   "hulane/scripts/lib/initializer.mjs",
+  "hulane/scripts/lib/specs.mjs",
   "hulane/mcp/server.mjs",
   "hulane/mcp/tools.mjs",
   "hulane/mcp/validate.mjs",
@@ -173,8 +186,14 @@ for (const requiredFile of [
 }
 
 const { TOOL_DEFINITIONS } = await import(new URL("../hulane/mcp/tools.mjs", import.meta.url));
-assert(TOOL_DEFINITIONS.length === 12, `expected 12 MCP tools, found ${TOOL_DEFINITIONS.length}`);
+assert(TOOL_DEFINITIONS.length === 13, `expected 13 MCP tools, found ${TOOL_DEFINITIONS.length}`);
 assert(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size === TOOL_DEFINITIONS.length, "MCP tool names must be unique");
+assert(TOOL_DEFINITIONS.some((tool) => tool.name === "hulane_record_specs_synced"),
+  "specs_synced evidence tool is missing from the MCP catalog");
+
+// 规格层措辞哨兵:编排面必须把 openspec/specs/ 能力规格路径写进 SKILL
+assert(read("hulane/skills/hulane-development/SKILL.md").includes("openspec/specs/"),
+  "SKILL.md must reference the openspec/specs/ capability-spec path");
 
 for (const file of walk()) {
   assert(path.basename(file) !== ".DS_Store", `forbidden macOS metadata: ${file}`);

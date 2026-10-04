@@ -6,10 +6,10 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.5.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.6.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
-`hulane` 组件：8 个 `/hulane_*` 命令、12 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板与 GitHub Actions 模板。
+`hulane` 组件：8 个 `/hulane_*` 命令、13 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
 
@@ -44,6 +44,13 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
   合并后由 `policy_skip` 自动关单,不再逐条人工确认;
 - 小修快车道:纯前端/文档、低风险的小改动以 `size: small` 立项,由 Primary Agent
   内联产出计划,跳过 planner 子 Agent 派发;其余条目仍走完整 Planner 分析;
+- 原生能力规格层(OpenSpec 兼容):业务仓库在 `openspec/specs/<capability>/spec.md`
+  沉淀行为基线;规划期产出 delta 进 Gate A 审批包,实现 PR 内完成 delta→主规格
+  智能合并并归档决策史于 `openspec/changes/archive/<REQ-ID>/`;merge 后由
+  `hulane_record_specs_synced` 对 merged_sha 树做结构校验并记录 `specs_synced`
+  (specs_commit_sha=merged_sha)。standard 工单默认 `spec_sync_required: true`
+  (纯基建/纯文档由 planner 显式豁免),small 恒 false,存量工单祖父回填;
+  未同步的工单被状态机与 PreToolUse 守卫双层拒绝关单——是机制,不是提示词纪律;
 - 公开仓库优先使用 GitHub Required PR Checks；不具备付费分支保护的私有仓库改用 MCP 控制面校验（要求 PR 上全部上报检查成功并固定 PR Head SHA），Gate B 规则与公开仓库一致：低/中风险自动合并，高风险停人工确认；
 - 控制面模式会核对 Actions 成功结果、固定 PR Head SHA，并要求合并命令携带 `--match-head-commit`；它不能阻止仓库管理员在 GitHub 页面手工绕过流程；
 - 默认交付策略为 `delivery_required: false` + `skip_allowed: true`(合并后跳过镜像,按需批量发版);仅当用户明确要求本次出镜像时才标记 `delivery_required: true`;

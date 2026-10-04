@@ -44,6 +44,11 @@ function assertActionState(item, action) {
     throw new Error("PR merge requires passed checks and a verified merge guard");
   }
   if (action === "pr-merge" && !Number.isInteger(item.pr_number)) throw new Error("PR merge requires a recorded pr_number");
+  // 规格层前置(双层强制的授权层侧):token 路径与状态自证路径共用本断言,
+  // spec_sync_required 且未记录 specs_synced 的工单不允许关闭 Issue
+  if (action === "issue-close" && item.spec_sync_required && item.specs_synced !== true) {
+    throw new Error("issue close requires recorded specs_synced evidence while spec_sync_required; call hulane_record_specs_synced first");
+  }
   if (action === "git-tag" && item.tag_confirmation !== "approved") throw new Error("git tag requires Gate C approval");
   if (action === "git-tag" && !/^[0-9a-f]{40}$/i.test(String(item.merged_sha ?? ""))) throw new Error("git tag requires merged_sha");
   if (action === "git-push" && item.status === "building" && item.tag_confirmation !== "approved") {

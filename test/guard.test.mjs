@@ -124,10 +124,21 @@ const mergeGuardEvidence = {
 };
 
 test("issue close without a token is state-verified from waiting_close", () => {
-  const root = managedRepository({ overrides: { status: "waiting_close" } });
+  const root = managedRepository({ overrides: { status: "waiting_close", specs_synced: true, specs_commit_sha: "a".repeat(40), spec_delta_dir: "openspec/changes/archive/REQ-66" } });
   const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 --repo acme/demo --comment "Done"' });
   assert.equal(result.allowed, true);
   assert.match(result.reason, /State-verified issue-close for REQ-66/);
+});
+
+test("issue close is denied until specs_synced is recorded for spec_sync_required items", () => {
+  const root = managedRepository({ overrides: { status: "waiting_close" } });
+  const result = evaluateCommand({ cwd: root, command: 'gh issue close 66 --repo acme/demo --comment "Done"' });
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /specs_synced/);
+  const exempt = managedRepository({ overrides: { status: "waiting_close", spec_sync_required: false } });
+  const allowed = evaluateCommand({ cwd: exempt, command: 'gh issue close 66 --repo acme/demo --comment "Done"' });
+  assert.equal(allowed.allowed, true);
+  assert.match(allowed.reason, /State-verified issue-close for REQ-66/);
 });
 
 test("issue close state verification rejects unknown numbers and wrong states", () => {

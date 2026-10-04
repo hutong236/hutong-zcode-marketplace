@@ -19,7 +19,10 @@ function frontmatter(item) {
     ["reviewer_result", item.reviewer_result], ["rework_count", item.rework_count], ["rework_limit", item.rework_limit],
     ["pr_checks", item.pr_checks], ["pr_check_name", item.pr_check_name], ["pr_check_run_url", item.pr_check_run_url],
     ["pr_head_sha", item.pr_head_sha], ["merge_guard_mode", item.merge_guard_mode],
-    ["required_checks_enforced", item.required_checks_enforced], ["legacy_completion", item.legacy_completion], ["tag_confirmation", item.tag_confirmation], ["build_status", item.build_status],
+    ["required_checks_enforced", item.required_checks_enforced], ["legacy_completion", item.legacy_completion],
+    ["spec_sync_required", item.spec_sync_required], ["specs_synced", item.specs_synced],
+    ["specs_commit_sha", item.specs_commit_sha], ["spec_delta_dir", item.spec_delta_dir],
+    ["tag_confirmation", item.tag_confirmation], ["build_status", item.build_status],
     ["image", item.image], ["image_tag", item.image_tag], ["image_digest", item.image_digest],
     ["workflow_run_url", item.workflow_run_url], ["registry_verified", item.registry_verified], ["release_url", item.release_url],
     ["sbom_status", item.sbom_status], ["sbom_digest", item.sbom_digest], ["provenance_status", item.provenance_status], ["provenance_digest", item.provenance_digest], ["blocked", item.blocked],
@@ -30,7 +33,7 @@ function frontmatter(item) {
 
 function initialBody(item, { plannerSummary = "", acceptanceCriteria = [] } = {}) {
   const criteria = acceptanceCriteria.length ? acceptanceCriteria.map((value) => `- [ ] ${value}`).join("\n") : "- [ ] 待补充";
-  return `# ${item.id} ${item.title}\n\n## 背景\n来自 GitHub Issue #${item.issue_number}。\n\n## 目标\n${item.title}\n\n## 功能范围\n- [ ] 按已批准范围实施\n\n## 非范围\n未经批准的范围变更。\n\n## 验收标准\n${criteria}\n\n## Planner 摘要\n${plannerSummary || "待补充"}\n\n## GitHub\n- Issue：${item.github_issue_url ?? `#${item.issue_number}`}\n- PR：\n- 分支：\n- 构建运行：\n\n## 关联\n\n## Agent 执行记录\n`;
+  return `# ${item.id} ${item.title}\n\n## 背景\n来自 GitHub Issue #${item.issue_number}。\n\n## 目标\n${item.title}\n\n## 功能范围\n- [ ] 按已批准范围实施\n\n## 非范围\n未经批准的范围变更。\n\n## 验收标准\n${criteria}\n\n## Planner 摘要\n${plannerSummary || "待补充"}\n\n## 规格关联\n- capability：\n- delta：\n- specs_commit_sha：\n- sync 状态：\n\n## GitHub\n- Issue：${item.github_issue_url ?? `#${item.issue_number}`}\n- PR：\n- 分支：\n- 构建运行：\n\n## 关联\n\n## Agent 执行记录\n`;
 }
 
 export function projectionPath(root, item) {
