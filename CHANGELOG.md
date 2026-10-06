@@ -5,6 +5,13 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- 设计环节品质标准锚定 Awwwards / Webby Awards / FWA 获奖品质：`hulane-designer`
+  产出前按该标准自检、每轮修订以逼近该标准为目标；`hulane-design-critic` 评分
+  锚从"顶级工作室执行水准"升级为获奖作品水准（9 分通过线 = 可与获奖作品同台
+  竞争），不再以普通内部工具或上一轮表现为参照。
+
 ## [3.7.0] - 2026-10-06
 
 ### Added
