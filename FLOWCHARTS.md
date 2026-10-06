@@ -193,15 +193,16 @@ Release 资产、GHCR 远程 manifest、SBOM/provenance 证据与 merged SHA
 
 ```mermaid
 flowchart TD
-  D1["日常：条目合并后 policy_skip，<br>改动持续累积在默认分支"] -->|"用户要求发版"| REL["开一个小型 maintenance 发布条目：<br>唯一代码变更是升版本号"]
-  REL --> STD["走标准流程：Gate A → 实现 → PR → 合并"]
-  STD --> GAC["在其 Gate C 确认 tag：<br>该提交包含全部先前已合并 SHA，<br>一次核验过的镜像覆盖整批"]
-  GAC --> SHIP["GHCR 得到一个已验证镜像，<br>Actions 分钟数与存储只花一次"]
+  D1["日常：条目合并后 policy_skip，<br>改动持续累积在默认分支"] -->|"用户要求发版"| REL["/hulane_release vX.Y.Z：<br>零工单——先汇报自上个 tag 的合并清单，<br>回显目标版本与 origin/main HEAD SHA"]
+  REL --> TOK["hulane_authorize_release 签发<br>两枚单次令牌：钉死 version+SHA<br>（tag 创建与 tag 推送各一枚）"]
+  TOK --> PUSH["在 main HEAD 打 annotated tag，<br>再以显式 refspec 推送 annotated tag 对象：<br>tag对象SHA:refs/tags/vX.Y.Z<br>（消费验证 annotated + 解引用绑钉死 commit）"]
+  PUSH --> SHIP["Build Checker 五源核验，<br>GHCR 得到一个已验证镜像，<br>Actions 分钟数与存储只花一次"]
 ```
 
 发布是显式的批量事件，不是每次合并的仪式——这是对 GitHub 免费套餐
-（Actions 分钟数、GHCR 存储）配额的尊重。要立即出某一个条目，也可以
-就在该条目自己的 Gate C 确认 tag。
+（Actions 分钟数、GHCR 存储）配额的尊重。批量发版走 `/hulane_release`
+轻量路径：一次人工确认、零工单、零工单状态写入。要立即出某一个条目，
+也可以就在该条目自己的 Gate C 确认 tag。
 
 ---
 

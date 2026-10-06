@@ -1,8 +1,8 @@
 # Hulane 项目：ZCode AI 研发流水线规范
 
-**版本：** V3.6.0
+**版本：** V3.7.0
 
-**日期：** 2026-10-04
+**日期：** 2026-10-06
 
 **适用范围：** Hulane 项目研发
 
@@ -82,6 +82,16 @@ git 排除）；原型由 orchestrator 渲染截图后派 `hulane-design-critic`
 批准记录必须是 `approve_requirement`，actor 使用
 `human:<identity>`。随后才创建 `.hulane/worktrees/REQ-123` 和独立分支。
 
+预授权例外：用户在需求原话中已明确批准（如「直接做」「预授权」）且
+工单 `risk_level` 为 low/medium、`spec_sync_required: false` 时，编排者可在
+开单同轮以 `human:<身份>` actor 发出 `approve_requirement`
+（`patch.approval_source="pre_authorized"`，evidence 引用用户原话与日期），
+不停等直达 ready，随后照常进入 worktree/Coder 流程；`/hulane_approve`
+仍是标准 Gate A 入口，记录 `approval_source="issue_stop"`。高风险与规格
+工单不受预授权覆盖，必须照常停在 `waiting_approval`——该硬边界由状态机
+强制，越界的预授权事件直接抛错、状态不变；V3.7.0 前的存量工单由
+normalizeWorkItem 回填 `issue_stop`。
+
 ### Gate B：高风险合并
 
 破坏性迁移、数据删除/覆盖、认证权限、不兼容 API、影响既有数据的唯一性
@@ -115,9 +125,18 @@ Gate C 的人工停等只服务于出镜像的条目。`Planner` 已持久化
 默认策略为发布按需批量进行,不要求每次合并都打 tag 发版,以适配
 GitHub 免费套餐的 Actions 分钟数与 GHCR 存储配额。仅当用户明确要求
 本次出镜像时,才以 `delivery_required: true` 立项并在其 Gate C 打
-tag。要发一批累积改动时,开一个小型 maintenance 发布条目(仅提升
-版本号),在其 Gate C 打一个 tag——该提交包含全部先前已合并的 SHA,
-一次镜像即覆盖整批。
+tag。要发一批累积改动时,直接运行 `/hulane_release vX.Y.Z` 轻量发版:
+一次人工确认、零工单——命令先汇报自上个 tag 以来的合并清单并回显
+目标版本与 origin/main HEAD SHA,`hulane_authorize_release` 据此签发
+钉死 version+SHA 的两枚单次令牌(创建 tag 与推送 tag 各一枚,签发前
+用 `git ls-remote` 校验 SHA 必须等于 origin/main 当前 HEAD 且目标 tag
+远端不存在),在 main HEAD 打 annotated tag 并以显式 refspec
+`<tag对象SHA>:refs/tags/<vX.Y.Z>` 推送 annotated tag 对象(消费时验证
+annotated + 解引用绑定钉死 commit;简单 tag 名 refspec 不放行)触发镜像
+构建;构建
+核验由 Build Checker 对 GitHub 原生记录(Release、Actions run、GHCR
+digest)完成,全程不创建任何工单、不写任何工单状态,也不再开
+maintenance 发布工单走全流程。
 
 Coder → Tester/Reviewer 之间没有额外人工 Gate;Coder 完成后同一轮并行派发 Tester 与 Reviewer(Reviewer 只读,不违反单 worktree 单写者),两侧结果齐备才推进,任一失败按返工环回到 Coder 并重新并行派发。
 
@@ -246,6 +265,7 @@ Build Checker 必须独立核对：
 | `hulane_worktree_create` | 创建独立 worktree 并记录路径 |
 | `hulane_verify_pr_checks` | 核对 PR Head/检查并选择 GitHub 或控制面守卫 |
 | `hulane_authorize` | 发放一次性敏感操作令牌 |
+| `hulane_authorize_release` | 签发仓库级 release 令牌对（tag 创建 + tag 推送，单次、钉死 version+SHA） |
 | `hulane_verify_delivery` | 交叉核验完整供应链证据 |
 | `hulane_record_specs_synced` | 校验 merged_sha 树内规格结构并记录 specs_synced |
 
@@ -260,6 +280,7 @@ MCP stdio server 同时支持当前 `2026-07-28` 发现协议和旧版初始化�
 /hulane_approve <REQ-xxx/BUG-xxx>
 /hulane_merge_approve <REQ-xxx/BUG-xxx>
 /hulane_tag_approve <REQ-xxx/BUG-xxx> [vX.Y.Z|skip]
+/hulane_release [vX.Y.Z]
 /hulane_status [REQ-xxx/BUG-xxx]
 /hulane_resume <REQ-xxx/BUG-xxx>
 ```

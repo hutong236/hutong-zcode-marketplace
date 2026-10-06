@@ -13,6 +13,7 @@ function frontmatter(item) {
     ["id", item.id], ["state_revision", item.revision], ["title", item.title], ["type", item.type],
     ["status", item.status], ["risk_level", item.risk_level], ["delivery_required", item.delivery_required],
     ["delivery_reason", item.delivery_reason], ["skip_allowed", item.skip_allowed], ["human_approval", item.human_approval],
+    ["approval_source", item.approval_source],
     ["github_issue", item.issue_number], ["github_issue_url", item.github_issue_url], ["github_pr", item.pr_number],
     ["github_pr_url", item.github_pr_url], ["branch", item.branch], ["worktree_path", item.worktree_path],
     ["agent_owner", item.agent_owner], ["coder_result", item.coder_result], ["tester_result", item.tester_result],

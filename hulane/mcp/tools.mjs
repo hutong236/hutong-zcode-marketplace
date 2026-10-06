@@ -3,7 +3,7 @@ import { applyEvent, createWorkItem, validateWorkItem } from "../scripts/lib/sta
 import { findControlRoot, getItem, initializeRepositoryState, putItem, readStore } from "../scripts/lib/state-store.mjs";
 import { hydrateItemFromGitHub, resolveRepository, runGh, syncItemToGitHub } from "../scripts/lib/github-state.mjs";
 import { createWorktree } from "../scripts/lib/worktree.mjs";
-import { issueAuthorization } from "../scripts/lib/authorization.mjs";
+import { issueAuthorization, issueReleaseAuthorization } from "../scripts/lib/authorization.mjs";
 import { validateDeliveryEvidence } from "../scripts/lib/delivery.mjs";
 import { runPreflight } from "../scripts/lib/preflight.mjs";
 import { initializeTargetRepository } from "../scripts/lib/initializer.mjs";
@@ -126,6 +126,18 @@ export const TOOL_DEFINITIONS = Object.freeze([
       specs_commit_sha: commitSha, spec_delta_dir: text,
       sync: { type: "boolean", default: true }, repository: { type: "string" },
     }, ["id", "actor", "evidence", "specs_commit_sha", "spec_delta_dir"]),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
+    name: "hulane_authorize_release",
+    description: "Primary-Agent-only issuance of a repository-level release token pair (no Work Item): the strict-SemVer version and 40-char SHA are pinned, the SHA must equal the current origin/main HEAD, and the target tag must not exist remotely. Returns one single-use tag token and one single-use push token for the lightweight /hulane_release path.",
+    inputSchema: objectSchema({
+      version: text,
+      sha: commitSha,
+      actor: { const: "orchestrator" },
+      evidence: text,
+      ttl_seconds: { type: "integer", minimum: 10, maximum: 600, default: 120 },
+    }, ["version", "sha", "actor", "evidence"]),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
 ]);
@@ -320,6 +332,16 @@ export function callTool(name, args = {}, context = {}) {
 
   if (name === "hulane_authorize") {
     return issueAuthorization(root, { id: args.id, action: args.action, actor: args.actor, ttlSeconds: args.ttl_seconds });
+  }
+
+  if (name === "hulane_authorize_release") {
+    return issueReleaseAuthorization(root, {
+      version: args.version,
+      sha: args.sha,
+      actor: args.actor,
+      evidence: args.evidence,
+      ttlSeconds: args.ttl_seconds ?? 120,
+    });
   }
 
   if (name === "hulane_verify_delivery") {

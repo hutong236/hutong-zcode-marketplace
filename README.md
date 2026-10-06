@@ -6,10 +6,10 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.6.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.7.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
-`hulane` 组件：8 个 `/hulane_*` 命令、13 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
+`hulane` 组件：9 个 `/hulane_*` 命令、14 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
 
@@ -37,7 +37,9 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 
 ## 安全边界（hulane）
 
-- Gate A：需求批准后才允许写业务代码；
+- Gate A：需求批准后才允许写业务代码；用户需求原话已明确批准（如「直接做」「预授权」）
+  且工单低/中风险、无规格同步要求时，可同轮预授权（approval_source="pre_authorized"）
+  直达 ready，高风险与规格工单仍必须停等 `/hulane_approve`；
 - Gate B：高风险 PR 必须人工批准合并；
 - Gate C：出镜像的条目合并后必须人工确认 Tag/镜像交付;默认 skip 策略
   (`delivery_required: false` + `skip_allowed: true`)在 Gate A 批准时已确认,
@@ -53,7 +55,7 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
   未同步的工单被状态机与 PreToolUse 守卫双层拒绝关单——是机制,不是提示词纪律;
 - 公开仓库优先使用 GitHub Required PR Checks；不具备付费分支保护的私有仓库改用 MCP 控制面校验（要求 PR 上全部上报检查成功并固定 PR Head SHA），Gate B 规则与公开仓库一致：低/中风险自动合并，高风险停人工确认；
 - 控制面模式会核对 Actions 成功结果、固定 PR Head SHA，并要求合并命令携带 `--match-head-commit`；它不能阻止仓库管理员在 GitHub 页面手工绕过流程；
-- 默认交付策略为 `delivery_required: false` + `skip_allowed: true`(合并后跳过镜像,按需批量发版);仅当用户明确要求本次出镜像时才标记 `delivery_required: true`;
+- 默认交付策略为 `delivery_required: false` + `skip_allowed: true`(合并后跳过镜像,按需批量发版);仅当用户明确要求本次出镜像时才标记 `delivery_required: true`;批量发版走 `/hulane_release vX.Y.Z` 轻量路径——零工单、一次确认、两枚钉死 version+SHA 的单次令牌;
 - Coder 完成后不增加人工 Gate，Tester 与 Reviewer 自动衔接。
 - 前端页面级工单在写代码前产出页面设计并入 Gate A 审批包：设计说明强制映射到既有组件/设计令牌，新视觉词汇必须附偏离声明由人工裁决；未触发设计的条目零设计开销。
 - 每个 Work Item 使用独立 worktree；push/tag 受保护操作需要一次性授权令牌，merge/close 由 guard 按状态自证放行；自动返工最多 3 轮。

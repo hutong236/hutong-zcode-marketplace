@@ -5,10 +5,14 @@
 Releases are on-demand and batched, never a per-merge ritual. Most work items
 persist `delivery_required: false` and close as human-confirmed skips; the
 image delivery chain below runs only when the user explicitly asks to ship.
-To ship a batch, open a small `maintenance` release item that bumps the
-project version, merge it, and confirm the tag at its Gate C — the tagged
-commit contains every previously merged SHA, so one verified image covers the
-whole batch. The workflow itself stays strict; releasing less often is what
+To ship a batch, run `/hulane_release vX.Y.Z` — no work item is created; the
+command shows the merged-PR batch, tags origin/main HEAD with a scoped
+one-use release token pair, pushes the annotated tag object via the explicit
+refspec `<tag object SHA>:refs/tags/<vX.Y.Z>` (consumption verifies the
+annotated form and a dereference bound to the pinned commit), and Build
+Checker verifies the image. To ship
+one item immediately instead, confirm the tag at that item's own Gate C.
+The workflow itself stays strict; releasing less often is what
 respects GitHub free-plan quotas (Actions minutes and GHCR storage). The
 build uses the free, auto-evicted GitHub Actions cache instead of a GHCR
 buildcache ref, emits only the SemVer tags, and keeps the metadata artifact

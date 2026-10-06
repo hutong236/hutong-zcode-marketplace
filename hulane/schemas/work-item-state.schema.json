@@ -45,6 +45,7 @@
     "delivery_reason": { "type": "string" },
     "skip_allowed": { "type": "boolean" },
     "human_approval": { "enum": ["required", "approved"] },
+    "approval_source": { "enum": ["issue_stop", "pre_authorized"] },
     "issue_state": { "enum": ["open", "closed"] },
     "pr_number": { "type": ["integer", "null"], "minimum": 1 },
     "pr_head_sha": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{40}$" },
