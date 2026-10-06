@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { consumeAuthorization, verifyStateAuthorization } from "../scripts/lib/authorization.mjs";
+import { consumeAuthorization, consumeReleaseAuthorization, verifyStateAuthorization } from "../scripts/lib/authorization.mjs";
 import { findControlRoot, resolveControlDir, storePath } from "../scripts/lib/state-store.mjs";
 
 function shellSegments(command) {
@@ -38,15 +38,19 @@ function isReadOnlyGitTag(segment) {
   return /^(?:-l|--list|--contains|--points-at|--merged|--no-merged|--sort(?:=|\s))\b/.test(after);
 }
 
-// git push 命令中显式给出的远端参数（过滤选项与环境变量赋值，取第一个位置参数）；
-// 裸 `git push` 返回空
-function pushRemoteTargets(segment) {
+// git push 命令的位置参数（过滤选项与环境变量赋值）；裸 `git push` 返回空
+function pushPositionalArgs(segment) {
   const match = segment.match(/\bgit\b[^\n;&|]*?\bpush\b\s+(.+)$/);
   if (!match) return [];
-  const args = match[1]
+  return match[1]
     .trim()
     .split(/\s+/)
     .filter((arg) => !arg.startsWith("-") && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg));
+}
+
+// git push 命令中显式给出的远端参数（第一个位置参数）；裸 `git push` 返回空
+function pushRemoteTargets(segment) {
+  const args = pushPositionalArgs(segment);
   return args.length > 0 ? [args[0]] : [];
 }
 
@@ -57,6 +61,28 @@ function normalizeRemoteTarget(target) {
     .replace(/^[^@/]+@/, "")
     .replace(/\.git$/i, "")
     .toLowerCase();
+}
+
+// release 令牌只放行显式 refspec 形式的 tag 推送:第一个位置参数是远端,
+// refspec 部分必须恰好一条且为 `<40位SHA>:refs/tags/<vX.Y.Z>`——SHA 语义为
+// annotated tag 对象(Gate A 裁决 #2),形态识别只看 40 位十六进制,对象真伪
+// 与钉死值绑定由消费层三重验证链(annotated + 本地钉死 tag 对象 + 解引用)
+// 完成。裸 `vX.Y.Z` 简单 refspec、裸 push、分支推送、tag+分支混合、
+// 多条 tag refspec(夹带任意额外 tag)或重复同条 refspec 都不进入
+// release 通道,回到原工单令牌路径(fail-closed)
+const RELEASE_TAG_REFSPEC_PATTERN = /^[0-9a-f]{40}:refs\/tags\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
+
+function isReleaseTagPush(command) {
+  const segments = shellSegments(stripMessageBodies(command)).filter((segment) => containsGitSubcommand(segment, "push"));
+  if (segments.length === 0) return false;
+  for (const segment of segments) {
+    const args = pushPositionalArgs(segment);
+    // 裸 `git push`(推 origin)、简单 tag 名 refspec、分支推送都不属于 release 通道;
+    // refspec 恰好一条——多条(夹带)或重复同条都回落拒绝
+    const refspecs = args.slice(1);
+    if (refspecs.length !== 1 || !RELEASE_TAG_REFSPEC_PATTERN.test(refspecs[0])) return false;
+  }
+  return true;
 }
 
 // 白名单来自控制根 .hulane/guard-allowlist.json（字符串数组，子串匹配归一化远端）
@@ -109,7 +135,7 @@ function hookResult(decision, reason) {
   };
 }
 
-export function evaluateCommand({ cwd, command, token }) {
+export function evaluateCommand({ cwd, command, token, releaseTagToken, releasePushToken }) {
   const actions = analyzeCommand(command);
   if (actions.length === 0) return { allowed: true, reason: "No protected operation" };
 
@@ -133,6 +159,26 @@ export function evaluateCommand({ cwd, command, token }) {
     return { allowed: false, reason: "Set the Bash tool working directory directly; protected calls may not change or override repository paths" };
   }
   if (!token) {
+    // 仓库级 release 令牌通道(仅当无工单令牌时):tag 创建腿认
+    // HULANE_RELEASE_TAG_TOKEN,tag 推送腿只认 `<tag对象SHA>:refs/tags/<vX.Y.Z>`
+    // 显式 refspec 推送 + HULANE_RELEASE_PUSH_TOKEN(对象真伪由消费层验证);
+    // 普通分支推送、简单 tag 名 refspec 推送都不进入该通道
+    if (actions[0] === "git-tag" && releaseTagToken) {
+      try {
+        const authorization = consumeReleaseAuthorization(root, { token: releaseTagToken, action: "release-tag", cwd, command });
+        return { allowed: true, reason: `Authorized release-tag ${authorization.target.version} at ${authorization.target.sha}` };
+      } catch (error) {
+        return { allowed: false, reason: error.message };
+      }
+    }
+    if (actions[0] === "git-push" && releasePushToken && isReleaseTagPush(command)) {
+      try {
+        const authorization = consumeReleaseAuthorization(root, { token: releasePushToken, action: "release-push", cwd, command });
+        return { allowed: true, reason: `Authorized release-push ${authorization.target.version} at ${authorization.target.sha}` };
+      } catch (error) {
+        return { allowed: false, reason: error.message };
+      }
+    }
     // issue-close / pr-merge 允许无令牌状态自证:waiting_close / merging 状态
     // 本身就是已完成证据校验的授权,校验逻辑与令牌消费共用同一套
     if (actions[0] === "issue-close" || actions[0] === "pr-merge") {
@@ -160,7 +206,9 @@ async function main() {
   const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
   const command = input.tool_input?.command ?? input.tool_input?.cmd ?? "";
   const token = String(command).match(/(?:^|\s)HULANE_AUTH_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];
-  const result = evaluateCommand({ cwd: input.cwd ?? process.cwd(), command, token });
+  const releaseTagToken = String(command).match(/(?:^|\s)HULANE_RELEASE_TAG_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];
+  const releasePushToken = String(command).match(/(?:^|\s)HULANE_RELEASE_PUSH_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];
+  const result = evaluateCommand({ cwd: input.cwd ?? process.cwd(), command, token, releaseTagToken, releasePushToken });
   process.stdout.write(`${JSON.stringify(hookResult(result.allowed ? "allow" : "deny", result.reason))}\n`);
 }
 

@@ -12,6 +12,13 @@ export const AUTHORIZATION_ACTIONS = Object.freeze([
   "issue-close",
 ]);
 
+// 仓库级 release 令牌(不挂工单):tag 创建与 tag 推送各一枚,单次使用,
+// scope 钉死 {version, sha}。轻量批量发版(/hulane_release)专用
+export const RELEASE_ACTIONS = Object.freeze(["release-tag", "release-push"]);
+
+// 与状态机 SEMVER_TAG_PATTERN 同一严格度:可带 v 前缀或裸 SemVer,规范形为 vX.Y.Z
+const SEMVER_CORE_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
+
 const REQUIRED_STATE = Object.freeze({
   "git-push": ["pr_open", "building"],
   "git-tag": ["building"],
@@ -64,6 +71,24 @@ function assertActionState(item, action) {
 
 function commandHasNumber(command, number) {
   return new RegExp(`(?:^|\\s)${number}(?:\\s|$)`).test(command);
+}
+
+// 远端加固:签发与消费都以远端事实为准,不信本地引用(可能陈旧)
+function remoteMainHead(root) {
+  const result = spawnSync("git", ["ls-remote", "origin", "refs/heads/main"], { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`Release authorization requires a reachable origin remote: ${(result.stderr || result.stdout).trim()}`);
+  }
+  const line = result.stdout.trim().split(/\r?\n/).filter(Boolean)[0];
+  return line ? line.split(/\s+/)[0] : null;
+}
+
+function remoteTagExists(root, tag) {
+  const result = spawnSync("git", ["ls-remote", "--tags", "origin", tag], { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`Release authorization requires a reachable origin remote: ${(result.stderr || result.stdout).trim()}`);
+  }
+  return result.stdout.split(/\r?\n/).some((line) => line.trim().endsWith(`refs/tags/${tag}`));
 }
 
 // git 输出真实路径,而状态里记录的可能是含软链的原始路径(如 macOS 的 /var),比较前必须统一
@@ -146,6 +171,134 @@ export function consumeAuthorization(root, { token, action, cwd, command }, now 
   assertActionState(item, action);
   assertExecutionScope(root, item, action, cwd, command);
 
+  authorization.used_at = now().toISOString();
+  atomicWrite(file, authorization);
+  return authorization;
+}
+
+// 轻量批量发版:仓库级令牌对(不挂任何工单)。签发前远端加固——
+// sha 必须等于 origin/main 当前 HEAD(git ls-remote,不信本地引用),
+// 目标 tag 在远端必须不存在;一次返回 tag 创建与 tag 推送两枚单次令牌,
+// scope 钉死规范化的 vX.Y.Z + 小写 40 位 sha,TTL 与工单令牌同一区间
+export function issueReleaseAuthorization(root, { version, sha, ttlSeconds = 120, actor = "orchestrator", evidence }, now = () => new Date()) {
+  if (actor !== "orchestrator") throw new Error("Only the Primary Agent orchestrator may issue execution authorization");
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds < 10 || ttlSeconds > 600) {
+    throw new Error("Authorization TTL must be an integer from 10 to 600 seconds");
+  }
+  if (!String(evidence ?? "").trim()) throw new Error("Release authorization requires evidence citing the user's release request");
+  const core = String(version ?? "").replace(/^v/, "");
+  if (!SEMVER_CORE_PATTERN.test(core)) throw new Error("Release version must be strict SemVer (vX.Y.Z)");
+  const tag = `v${core}`;
+  const normalizedSha = String(sha ?? "").toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(normalizedSha)) throw new Error("Release sha must be a 40-character commit SHA");
+  const mainHead = remoteMainHead(root);
+  if (mainHead !== normalizedSha) throw new Error("Release sha must equal the current origin/main HEAD");
+  if (remoteTagExists(root, tag)) throw new Error(`Release tag ${tag} already exists on the remote; refusing to re-issue a release authorization`);
+
+  const issuedAt = now();
+  const expiresAt = new Date(issuedAt.getTime() + ttlSeconds * 1000).toISOString();
+  const mint = (action) => {
+    const authorization = {
+      schema_version: 1,
+      token: randomBytes(32).toString("hex"),
+      release: true,
+      work_item: null,
+      action,
+      actor,
+      evidence: String(evidence).trim(),
+      target: { version: tag, sha: normalizedSha },
+      issued_at: issuedAt.toISOString(),
+      expires_at: expiresAt,
+      used_at: null,
+    };
+    atomicWrite(authorizationPath(root, authorization.token), authorization);
+    return authorization;
+  };
+  const tagAuthorization = mint("release-tag");
+  const pushAuthorization = mint("release-push");
+  return {
+    tag_token: tagAuthorization.token,
+    push_token: pushAuthorization.token,
+    version: tag,
+    sha: normalizedSha,
+    expires_at: expiresAt,
+  };
+}
+
+// 与 guard.mjs 的 push 解析同构:按换行/&&/||/; 切段,取每个含 git push 的
+// 段中 push 之后的位置参数(滤选项与环境变量赋值),首参为远端、其余为 refspec
+function pushRefspecsOf(command) {
+  const refspecs = [];
+  for (const segment of String(command ?? "").split(/(?:\r?\n|&&|\|\||;)/)) {
+    const match = segment.match(/\bgit\b[^\n;&|]*?\bpush\b\s+(.+)$/);
+    if (!match) continue;
+    const args = match[1]
+      .trim()
+      .split(/\s+/)
+      .filter((arg) => !arg.startsWith("-") && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(arg));
+    if (args.length > 1) refspecs.push(...args.slice(1));
+  }
+  return refspecs;
+}
+
+function gitOutput(root, args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+// release 令牌消费校验与工单令牌的 assertExecutionScope 同构:
+// 同一仓库 + 命令点名钉死的目标。tag 创建腿必须同时点名 version 与钉死
+// commit SHA(对应 annotated tag 命令天然同时携带二者);tag 推送腿重新解析
+// push 的 refspec 位置参数,必须恰好一条且形如 `<40位>:refs/tags/<钉死version>`
+// (简单形式 `vX.Y.Z` 不放行;多条 refspec 夹带任意额外 tag/分支一律拒绝)。
+// Gate A 裁决 #2(保 annotated tag):推送的是 tag 对象本身,消费时三重验证链
+// ①cat-file -t 为 tag(防本地 tag 被删重建为轻量蒙混);②rev-parse <钉死version>
+// 等于 refspec SHA(该对象就是本地钉死版本之 tag 对象);③rev-parse <钉死version>^{}
+// 解引用等于钉死 commit SHA。任一环节失败即抛错并说明缺哪环
+function assertReleaseExecutionScope(root, authorization, action, cwd, command) {
+  if (!cwd || !command) throw new Error("Authorization consumption requires command context");
+  if (canonicalPath(findControlRoot(cwd)) !== canonicalPath(root)) throw new Error("Protected command targets a different repository");
+  const { version, sha } = authorization.target;
+  if (!String(command).includes(version)) {
+    throw new Error(`Release ${action} command must name the pinned tag ${version}`);
+  }
+  if (action === "release-tag" && !String(command).includes(sha)) {
+    throw new Error("Annotated tag command must name the pinned release SHA");
+  }
+  if (action === "release-push") {
+    const refspecs = pushRefspecsOf(command);
+    const malformed = () => new Error(`Release push command must use exactly one explicit refspec <annotated-tag-object-sha>:refs/tags/${version}`);
+    if (refspecs.length !== 1) throw malformed();
+    const separator = refspecs[0].indexOf(":");
+    const tagObjectSha = separator === -1 ? "" : refspecs[0].slice(0, separator).toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(tagObjectSha) || refspecs[0].slice(separator + 1) !== `refs/tags/${version}`) {
+      throw malformed();
+    }
+    const objectType = gitOutput(root, ["cat-file", "-t", tagObjectSha]);
+    if (objectType !== "tag") {
+      throw new Error(`Release push refspec object ${tagObjectSha} is not an annotated tag object${objectType ? ` (git reports ${objectType})` : ""}; the push must ship the annotated tag created by the release-tag leg`);
+    }
+    const localTagObject = gitOutput(root, ["rev-parse", version]);
+    if (localTagObject !== tagObjectSha) {
+      throw new Error(`Release push refspec object ${tagObjectSha} is not the local tag ${version}${localTagObject ? ` (rev-parse reports ${localTagObject})` : ""}`);
+    }
+    const taggedCommit = gitOutput(root, ["rev-parse", `${version}^{}`]);
+    if (taggedCommit !== sha) {
+      throw new Error(`Release tag ${version} dereferences to commit ${taggedCommit ?? "<unknown>"}, not the pinned release commit ${sha}`);
+    }
+  }
+}
+
+export function consumeReleaseAuthorization(root, { token, action, cwd, command }, now = () => new Date()) {
+  if (!RELEASE_ACTIONS.includes(action)) throw new Error(`Unsupported release authorization action: ${action}`);
+  const file = authorizationPath(root, token);
+  if (!fs.existsSync(file)) throw new Error("Authorization token was not found");
+  const authorization = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (authorization.release !== true) throw new Error("Authorization token is not a release authorization");
+  if (authorization.action !== action) throw new Error(`Authorization is for ${authorization.action}, not ${action}`);
+  if (authorization.used_at) throw new Error("Authorization token has already been used");
+  if (Date.parse(authorization.expires_at) <= now().getTime()) throw new Error("Authorization token has expired");
+  assertReleaseExecutionScope(root, authorization, action, cwd, command);
   authorization.used_at = now().toISOString();
   atomicWrite(file, authorization);
   return authorization;

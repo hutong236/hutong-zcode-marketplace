@@ -12,7 +12,7 @@ Requirement → Issue（含 spec delta 进 Gate A 审批包，仅 spec_sync_requ
   → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Spec Sync 校验（hulane_record_specs_synced，specs_commit_sha=merged_sha）→ Close Issue → Done
 ```
 
-Commands: `/hulane_check`, `/hulane_init`, `/hulane_dev`, `/hulane_approve`, `/hulane_merge_approve`, `/hulane_tag_approve`, `/hulane_status`, `/hulane_resume`.
+Commands: `/hulane_check`, `/hulane_init`, `/hulane_dev`, `/hulane_approve`, `/hulane_merge_approve`, `/hulane_tag_approve`, `/hulane_release`, `/hulane_status`, `/hulane_resume`.
 
 Prerequisites in ZCode terminal:
 
@@ -28,8 +28,11 @@ Repository should have a usable Dockerfile. Primary Agent is Orchestrator; plugi
 `skip` is the default delivery outcome under the on-demand release cadence:
 Planner persists `delivery_required: false` and `skip_allowed: true` unless the
 user explicitly asks to release an image with the item. Releases are batched on
-demand — one tag on a small maintenance release item covers every accumulated
-merge (see `docs/IMAGE_DELIVERY.md`).
+demand — `/hulane_release vX.Y.Z` ships every accumulated merge with no work
+item: the command shows the merged-PR batch, `hulane_authorize_release` pins
+the version and the origin/main HEAD SHA into a single-use release token pair
+(tag creation + tag push), and Build Checker verifies the image (see
+`docs/IMAGE_DELIVERY.md`).
 
 Each Work Item runs in `.hulane/worktrees/<ID>`. Automatic implementation
 rework is limited to three rounds. A state-aware hook requires a short-lived,

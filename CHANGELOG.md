@@ -12,6 +12,42 @@ Versions follow Semantic Versioning.
   锚从"顶级工作室执行水准"升级为获奖作品水准（9 分通过线 = 可与获奖作品同台
   竞争），不再以普通内部工具或上一轮表现为参照。
 
+## [3.7.0] - 2026-10-06
+
+### Added
+
+- Gate A 单单预授权：用户在需求原话中明确批准（如「直接做」「预授权」）且工单
+  `risk_level ∈ {low,medium}`、`spec_sync_required=false` 时，编排者开单同轮以
+  `human:<身份>` actor 应用 `approve_requirement`（`patch.approval_source="pre_authorized"`，
+  evidence 引用用户原话），跳过 Gate A 停等直达 ready 并直接续跑 worktree/Coder 流程；
+  硬边界由状态机强制——高风险与规格工单永远拒绝预授权且状态不变，预授权也不得
+  同轮豁免规格要求；`approval_source`（枚举 `issue_stop` | `pre_authorized`）进工单
+  状态、schema 与投影，写入通道收口到 `approve_requirement` 单一事件（其余事件
+  携带即抛 `Unsupported state patch field`），V3.7.0 前的存量工单由
+  `normalizeWorkItem` 回填 `issue_stop` 不阻断流转。
+- 轻量批量发版 `/hulane_release [vX.Y.Z]`：无工单直达 tag 发版。缺版本号停等用户
+  补充（不猜测）；带版本号先汇报自上个 tag 以来的合并清单（git log + gh pr
+  merged）并回显目标版本与 origin/main HEAD SHA，再签发令牌、在 main HEAD 打
+  annotated tag 并推送、后台 watch tag 触发的镜像构建，Build Checker 五源核验
+  （tag commit / Actions run / Release / GHCR digest / SBOM+provenance）后汇报
+  Release URL 与 digest；全程零工单、零 `hulane_verify_delivery`、零工单状态写入，
+  构建失败汇报 run URL 停等人工。
+- 新第 14 个 MCP 工具 `hulane_authorize_release`：签发仓库级（不挂工单）release
+  令牌，一次返回 tag 创建与 tag 推送两枚单次令牌；scope 钉死
+  {version（严格 SemVer，可带/裸 v 前缀，规范形 vX.Y.Z）, sha（40 位）}，TTL
+  10–600 秒（默认 120）；签发前远端加固——`git ls-remote` 校验 sha 必须等于
+  origin/main 当前 HEAD、目标 tag 在远端不存在；tag 创建腿消费须同时点名钉死的
+  tag 与钉死 commit SHA，tag 推送腿只放行显式 refspec
+  `<annotated tag 对象 SHA>:refs/tags/<vX.Y.Z>` 推送（Gate A 裁决 #2 保
+  annotated tag：tag 腿先建 annotated tag，推送 tag 对象本身，消费时三重验证
+  ——对象为 annotated tag、即本地钉死版本之 tag 对象、解引用等于钉死 commit
+  SHA，防轻量蒙混与改指向；简单 tag 名 refspec、多 refspec 夹带均回落拒绝）；
+  裸 tag 写操作仍拒，既有工单 git-tag 令牌路径（building 态 + Gate C approved
+  + merged_sha 点名）回归不变，普通分支推送继续走原工单令牌路径。
+- 新 capability `hulane-release-workflow`（`openspec/specs/`），决策史归档于
+  `openspec/changes/archive/REQ-5/`（proposal / delta / decisions，Gate A 批准人
+  human:hutong236，2026-10-06）。
+
 ## [3.6.0] - 2026-10-04
 
 ### Added

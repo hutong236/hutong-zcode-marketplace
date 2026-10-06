@@ -23,6 +23,7 @@ export const STATES = Object.freeze([
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
 export const SIZES = Object.freeze(["standard", "small"]);
+export const APPROVAL_SOURCES = Object.freeze(["issue_stop", "pre_authorized"]);
 export const MERGE_GUARD_MODES = Object.freeze([
   "unverified",
   "github_required_checks",
@@ -58,6 +59,7 @@ const STATIC_TRANSITIONS = Object.freeze({
 
 const PATCH_FIELDS = new Set([
   "agent_owner",
+  "approval_source",
   "block_reason",
   "branch",
   "build_status",
@@ -97,6 +99,9 @@ const PATCH_FIELDS = new Set([
 // 绕过 issue_closed / Done 的规格同步前置
 const SPEC_EXEMPTION_FIELDS = new Set(["spec_sync_required"]);
 const SPEC_EVIDENCE_FIELDS = new Set(["specs_synced", "specs_commit_sha", "spec_delta_dir"]);
+// Gate A 留痕字段同样收口:approval_source 只允许由 approve_requirement 写入,
+// 其余事件携带即抛错,防止事后伪造预授权来源
+const APPROVAL_TRACE_FIELDS = new Set(["approval_source"]);
 
 function assertPatchFieldOwnership(event, patch = {}) {
   for (const key of Object.keys(patch)) {
@@ -105,6 +110,9 @@ function assertPatchFieldOwnership(event, patch = {}) {
     }
     if (SPEC_EVIDENCE_FIELDS.has(key) && event !== "specs_synced") {
       throw new Error(`Unsupported state patch field: ${key} (only the specs_synced event may set it)`);
+    }
+    if (APPROVAL_TRACE_FIELDS.has(key) && event !== "approve_requirement") {
+      throw new Error(`Unsupported state patch field: ${key} (only approve_requirement may set it)`);
     }
   }
 }
@@ -183,6 +191,9 @@ export function normalizeWorkItem(item) {
   if (!("specs_synced" in next)) next.specs_synced = false;
   if (!("specs_commit_sha" in next)) next.specs_commit_sha = null;
   if (!("spec_delta_dir" in next)) next.spec_delta_dir = null;
+  // V3.7.0 前立项的存量工单没有 Gate A 来源字段:祖父回填 issue_stop,
+  // 既有流转不受影响(参照规格层字段的存量豁免方式)
+  if (!("approval_source" in next)) next.approval_source = "issue_stop";
   return next;
 }
 
@@ -227,6 +238,7 @@ export function createWorkItem(input, now = () => new Date()) {
     delivery_reason: String(input.delivery_reason ?? "").trim(),
     skip_allowed: skipAllowed,
     human_approval: "required",
+    approval_source: "issue_stop",
     branch: null,
     worktree_path: null,
     pr_number: null,
@@ -421,6 +433,14 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   if (event === "approve_requirement") {
     next.human_approval = "approved";
     next.next_action = "start_planning";
+    // Gate A 留痕:默认 issue_stop(Issue 评论人工批准);预授权必须落在
+    // 硬边界内——低/中风险且无规格同步要求(含 patch 前后都不得是规格工单,
+    // 不允许借预授权同轮豁免规格层),否则抛错、状态不变
+    next.approval_source = payload.patch?.approval_source ?? "issue_stop";
+    if (next.approval_source === "pre_authorized"
+      && (!["low", "medium"].includes(item.risk_level) || item.spec_sync_required === true || next.spec_sync_required === true)) {
+      throw new Error("pre-authorized approval requires risk_level low/medium and spec_sync_required false; high-risk and spec-sync items must stop at Gate A for human approval");
+    }
   } else if (event === "code_complete") {
     next.coder_result = "completed";
     next.tester_result = "pending";
@@ -532,6 +552,7 @@ export function validateWorkItem(item) {
   }
   if (typeof item.legacy_completion !== "boolean") errors.push("invalid legacy_completion");
   if (typeof item.spec_sync_required !== "boolean") errors.push("invalid spec_sync_required");
+  if (!APPROVAL_SOURCES.includes(item.approval_source)) errors.push("invalid approval_source");
   if (typeof item.specs_synced !== "boolean") errors.push("invalid specs_synced");
   if (item.specs_synced === true && !SHA_PATTERN.test(String(item.specs_commit_sha ?? ""))) {
     errors.push("recorded specs_synced requires a 40-character specs_commit_sha");

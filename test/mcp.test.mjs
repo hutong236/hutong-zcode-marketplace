@@ -90,10 +90,29 @@ function specsRepository({ malformed = false, withSpecs = true } = {}) {
 }
 
 test("MCP tool catalog is deterministic and input schemas reject extra fields", () => {
-  assert.equal(TOOL_DEFINITIONS.length, 13);
-  assert.equal(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size, 13);
+  assert.equal(TOOL_DEFINITIONS.length, 14);
+  assert.equal(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size, 14);
   const preflight = TOOL_DEFINITIONS.find((tool) => tool.name === "hulane_preflight");
   assert.deepEqual(validateInput(preflight.inputSchema, { unexpected: true }), ["arguments.unexpected is not allowed"]);
+});
+
+test("hulane_authorize_release validates version, sha, actor, evidence, and ttl bounds", () => {
+  const tool = TOOL_DEFINITIONS.find((entry) => entry.name === "hulane_authorize_release");
+  assert.ok(tool, "hulane_authorize_release must exist in the catalog");
+  const base = { version: "v1.2.3", sha: "a".repeat(40), actor: "orchestrator", evidence: "user asked to release" };
+  assert.deepEqual(validateInput(tool.inputSchema, base), []);
+  for (const field of ["version", "sha", "evidence"]) {
+    const { [field]: omitted, ...rest } = base;
+    assert.ok(
+      validateInput(tool.inputSchema, rest).some((error) => error.includes(`.${field}`)),
+      `missing ${field} must be rejected`,
+    );
+  }
+  assert.ok(validateInput(tool.inputSchema, { ...base, actor: "hulane-coder" }).some((error) => error.includes("actor")));
+  assert.ok(validateInput(tool.inputSchema, { ...base, sha: "short" }).some((error) => error.includes("sha")));
+  assert.ok(validateInput(tool.inputSchema, { ...base, ttl_seconds: 9 }).some((error) => error.includes("ttl_seconds")));
+  assert.ok(validateInput(tool.inputSchema, { ...base, ttl_seconds: 601 }).some((error) => error.includes("ttl_seconds")));
+  assert.ok(validateInput(tool.inputSchema, { ...base, unexpected: true }).some((error) => error.includes("unexpected")));
 });
 
 test("MCP server supports modern discovery and legacy initialization", () => {
@@ -122,7 +141,7 @@ test("MCP server supports modern discovery and legacy initialization", () => {
   assert.ok(responses.find((response) => response.id === "discover").result.supportedVersions.includes("2026-07-28"));
   assert.equal(responses.find((response) => response.id === "modern-list").result.resultType, "complete");
   assert.equal(responses.find((response) => response.id === 1).result.protocolVersion, "2025-11-25");
-  assert.equal(responses.find((response) => response.id === 2).result.tools.length, 13);
+  assert.equal(responses.find((response) => response.id === 2).result.tools.length, 14);
   assert.equal(responses.find((response) => response.id === 3).result.isError, undefined);
   assert.equal(responses.find((response) => response.id === 4).result.structuredContent.valid, true);
   assert.ok(fs.existsSync(path.join(root, ".hulane", "state.json")));

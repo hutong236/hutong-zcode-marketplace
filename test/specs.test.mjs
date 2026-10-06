@@ -141,17 +141,40 @@ test("path routing sends main specs and deltas to their validators", () => {
 });
 
 test("dogfood specs in this repository pass their own validator", () => {
-  const spec = validateSpecFile(
-    `${SPECS_DIR}/hulane-spec-layer/${CAPABILITY_SPEC_FILE}`,
-    fs.readFileSync(path.join(repositoryRoot, SPECS_DIR, "hulane-spec-layer", CAPABILITY_SPEC_FILE), "utf8"),
-  );
-  assert.equal(spec.capability, "hulane-spec-layer");
-  assert.ok(spec.requirements.length >= 1);
-  for (const requirement of spec.requirements) assert.ok(requirement.scenarios.length >= 1);
+  // 扫描本仓全部主规格:新增 capability 自动纳入校验
+  const specsRoot = path.join(repositoryRoot, SPECS_DIR);
+  const capabilities = fs.readdirSync(specsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(capabilities, ["hulane-release-workflow", "hulane-spec-layer"]);
+  const requirementCounts = {};
+  for (const capability of capabilities) {
+    const spec = validateSpecFile(
+      `${SPECS_DIR}/${capability}/${CAPABILITY_SPEC_FILE}`,
+      fs.readFileSync(path.join(specsRoot, capability, CAPABILITY_SPEC_FILE), "utf8"),
+    );
+    assert.equal(spec.kind, "capability");
+    assert.equal(spec.capability, capability);
+    assert.ok(spec.requirements.length >= 1);
+    for (const requirement of spec.requirements) assert.ok(requirement.scenarios.length >= 1);
+    requirementCounts[capability] = spec.requirements.length;
+  }
+  assert.equal(requirementCounts["hulane-release-workflow"], 6);
 
-  const delta = validateSpecFile(
-    `openspec/changes/archive/REQ-3/${DELTA_SPEC_FILE}`,
-    fs.readFileSync(path.join(repositoryRoot, "openspec", "changes", "archive", "REQ-3", DELTA_SPEC_FILE), "utf8"),
-  );
-  assert.deepEqual(delta.groups.map((group) => group.group), ["ADDED"]);
+  // 扫描全部决策史归档 delta:新增归档自动纳入校验
+  const archiveRoot = path.join(repositoryRoot, "openspec", "changes", "archive");
+  const archivedIds = fs.readdirSync(archiveRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5"]);
+  for (const id of archivedIds) {
+    const delta = validateSpecFile(
+      `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
+      fs.readFileSync(path.join(archiveRoot, id, DELTA_SPEC_FILE), "utf8"),
+    );
+    assert.equal(delta.kind, "delta");
+    assert.deepEqual(delta.groups.map((group) => group.group), ["ADDED"]);
+  }
 });

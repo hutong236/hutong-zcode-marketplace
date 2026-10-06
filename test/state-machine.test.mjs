@@ -380,3 +380,81 @@ test("Gate A approval is the only event that may revise the spec-sync exemption"
   const stillRequired = move(runtimeItem(), "approve_requirement", {}, "human:owner");
   assert.equal(stillRequired.spec_sync_required, true);
 });
+
+test("pre-authorization passes only inside the low/medium + non-spec hard boundary", () => {
+  // 高风险拒绝:抛错且状态不变
+  const high = runtimeItem({ risk_level: "high", spec_sync_required: false });
+  assert.throws(
+    () => move(high, "approve_requirement", { approval_source: "pre_authorized" }, "human:owner"),
+    /must stop at Gate A/,
+  );
+  assert.equal(high.status, "waiting_approval");
+
+  // spec_sync_required 工单拒绝(standard 默认 spec_sync_required=true)
+  const specItem = runtimeItem({ risk_level: "low" });
+  assert.equal(specItem.spec_sync_required, true);
+  assert.throws(
+    () => move(specItem, "approve_requirement", { approval_source: "pre_authorized" }, "human:owner"),
+    /must stop at Gate A/,
+  );
+
+  // 不允许借预授权同轮把规格工单豁免掉
+  assert.throws(
+    () => move(runtimeItem({ risk_level: "low" }), "approve_requirement", { approval_source: "pre_authorized", spec_sync_required: false }, "human:owner"),
+    /must stop at Gate A/,
+  );
+
+  // actor 非 human:<身份> 拒绝(approve_requirement 本就是 human 事件)
+  assert.throws(
+    () => move(runtimeItem({ risk_level: "medium", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }),
+    /human:<identity>/,
+  );
+
+  // medium + 非 spec 放行,留痕生效
+  const preAuthorized = move(runtimeItem({ risk_level: "medium", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }, "human:owner");
+  assert.equal(preAuthorized.status, "ready");
+  assert.equal(preAuthorized.human_approval, "approved");
+  assert.equal(preAuthorized.approval_source, "pre_authorized");
+  assert.equal(preAuthorized.history.at(-1).actor, "human:owner");
+  // low + 非 spec 同样放行
+  const lowLane = move(runtimeItem({ risk_level: "low", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }, "human:owner");
+  assert.equal(lowLane.approval_source, "pre_authorized");
+});
+
+test("approve_requirement defaults approval_source to issue_stop and new items start there", () => {
+  assert.equal(runtimeItem().approval_source, "issue_stop");
+  const approved = move(runtimeItem({ spec_sync_required: false }), "approve_requirement", {}, "human:owner");
+  assert.equal(approved.status, "ready");
+  assert.equal(approved.approval_source, "issue_stop");
+});
+
+test("only approve_requirement may write approval_source", () => {
+  const base = waitingCloseItem();
+  assert.throws(
+    () => move(base, "issue_closed", { approval_source: "pre_authorized" }),
+    /only approve_requirement may set it/,
+  );
+  assert.throws(
+    () => move(base, "specs_synced", { ...specSyncPatch, approval_source: "pre_authorized" }),
+    /only approve_requirement may set it/,
+  );
+});
+
+test("legacy items normalize approval_source to issue_stop and validateWorkItem enforces the enum", () => {
+  const legacy = waitingCloseItem({ spec_sync_required: false });
+  delete legacy.approval_source;
+  const normalized = normalizeWorkItem(legacy);
+  assert.equal(normalized.approval_source, "issue_stop");
+  const done = move(normalized, "issue_closed");
+  assert.equal(done.status, "done");
+  assert.equal(validateWorkItem(done), true);
+
+  assert.throws(
+    () => validateWorkItem({ ...runtimeItem({ spec_sync_required: false }), approval_source: "self_approved" }),
+    /invalid approval_source/,
+  );
+  assert.throws(
+    () => move(runtimeItem({ spec_sync_required: false }), "approve_requirement", { approval_source: "chat" }, "human:owner"),
+    /Invalid Work Item REQ-12: .*invalid approval_source/,
+  );
+});
