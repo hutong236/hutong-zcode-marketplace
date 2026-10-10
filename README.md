@@ -6,7 +6,7 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.7.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.7.1 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 
 `hulane` 组件：9 个 `/hulane_*` 命令、14 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
@@ -49,8 +49,9 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 - 原生能力规格层(OpenSpec 兼容):业务仓库在 `openspec/specs/<capability>/spec.md`
   沉淀行为基线;规划期产出 delta 进 Gate A 审批包,实现 PR 内完成 delta→主规格
   智能合并并归档决策史于 `openspec/changes/archive/<REQ-ID>/`;merge 后由
-  `hulane_record_specs_synced` 对 merged_sha 树做结构校验并记录 `specs_synced`
-  (specs_commit_sha=merged_sha)。standard 工单默认 `spec_sync_required: true`
+  `hulane_record_specs_synced` 对 merged_sha 树校验 `spec_delta_dir` 触达的
+  capability 主规格(delta 目录在提交树无 specs/ 快照时回退全量)并记录
+  `specs_synced` (specs_commit_sha=merged_sha)。standard 工单默认 `spec_sync_required: true`
   (纯基建/纯文档由 planner 显式豁免),small 恒 false,存量工单祖父回填;
   未同步的工单被状态机与 PreToolUse 守卫双层拒绝关单——是机制,不是提示词纪律;
 - 公开仓库优先使用 GitHub Required PR Checks；不具备付费分支保护的私有仓库改用 MCP 控制面校验（要求 PR 上全部上报检查成功并固定 PR Head SHA），Gate B 规则与公开仓库一致：低/中风险自动合并，高风险停人工确认；

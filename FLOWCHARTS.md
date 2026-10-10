@@ -136,7 +136,7 @@ flowchart TD
   MR(["pr_merged 已记录"]) --> POL{"发版策略"}
   POL -->|"默认：delivery_required=false<br>且 skip_allowed=true"| PS["policy_skip：引用 Gate A 批准证据<br>（Issue 号、批准人、delivery_reason），<br>无人工停"]
   PS --> SPEC{"规格校验与记录<br>spec_sync_required？"}
-  SPEC -->|"是且未记录<br>hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>merged_sha 树结构校验通过<br>→ 记录 specs_synced（自环）"| C1["关 Issue（状态核验，无 token）<br>记录 issue_closed → Done"]
+  SPEC -->|"是且未记录<br>hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>树内 delta 触达主规格校验通过<br>→ 记录 specs_synced（自环）"| C1["关 Issue（状态核验，无 token）<br>记录 issue_closed → Done"]
   SPEC -->|"否（small / 豁免 / 存量祖父）"| C1
   POL -->|"delivery_required=true"| GAC{{"Gate C：waiting_tag_confirm，停止"}}
   GAC -->|"/hulane_tag_approve ID vX.Y.Z"| TAGP["approve_tag → 进入 tag 路径（图 6）"]
@@ -259,7 +259,7 @@ flowchart TD
   S6 -->|"false（skip_allowed）"| S8["补记 policy_skip（引用 Gate A 批准）<br>→ 关 Issue → Done"]
   B -->|"building"| S9["gh run list 查一次：已结束 → Build Checker；<br>仍在跑 → 重挂后台 watch"]
   B -->|"waiting_close"| S9a{"spec_sync_required<br>且 specs_synced 未记录？"}
-  S9a -->|"是"| S9b["hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>校验 merged_sha 树结构并记录"]
+  S9a -->|"是"| S9b["hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>校验树内 delta 触达主规格并记录"]
   S9a -->|"否"| S10["一次状态核验关 Issue"]
   S9b --> S10
   B -->|"blocked"| S11["需要解决证据才能继续"]

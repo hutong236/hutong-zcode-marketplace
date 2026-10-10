@@ -1,8 +1,8 @@
 # Hulane 项目：ZCode AI 研发流水线规范
 
-**版本：** V3.7.0
+**版本：** V3.7.1
 
-**日期：** 2026-10-06
+**日期：** 2026-10-10
 
 **适用范围：** Hulane 项目研发
 
@@ -67,9 +67,9 @@ Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并
 设计回环：orchestrator 生成种子串并收集人工品味参考，派发只读
 `hulane-designer`（钉在 Kimi）产出设计说明与按需原型（`.hulane/designs/`，
 git 排除）；原型由 orchestrator 渲染截图后派 `hulane-design-critic` 在全新
-上下文中只看图评分（/10），低于 9 分按具体修改指令回炉，最多 3 轮；评分
-历史随设计说明一并进 Gate A 审批包，不新增人工停点。会话无渲染能力时
-注明 `skipped-no-renderer` 降级为单趟设计。
+上下文中只看图按 Awwwards/Webby/FWA 获奖品质打分（/10），低于 9 分按
+具体修改指令回炉，最多 3 轮；评分历史随设计说明一并进 Gate A 审批包，
+不新增人工停点。会话无渲染能力时注明 `skipped-no-renderer` 降级为单趟设计。
 
 ## 4. 人工 Gate
 
@@ -172,8 +172,9 @@ stateDiagram-v2
 阻塞并等待人工处理。
 
 `specs_synced` 是 `waiting_close` 上的自环事件：spec_sync_required 工单在
-合并后、关单前必须经 `hulane_record_specs_synced` 对 merged_sha 提交树做
-规格结构校验并记录 `specs_commit_sha = merged_sha`；未记录时
+合并后、关单前必须经 `hulane_record_specs_synced` 对 merged_sha 提交树校验
+spec delta 触达的 capability 主规格（delta 目录无 specs/ 快照时回退全量）
+并记录 `specs_commit_sha = merged_sha`；未记录时
 `issue_closed` 与 Done 被状态机拒绝，`gh issue close` 被 PreToolUse 守卫拒绝
 （双层强制）。small 工单恒 `spec_sync_required: false`，standard 默认 true
 （纯基建/纯文档由 planner 显式豁免并记录原因），V3.6.0 前的存量工单由
@@ -267,7 +268,7 @@ Build Checker 必须独立核对：
 | `hulane_authorize` | 发放一次性敏感操作令牌 |
 | `hulane_authorize_release` | 签发仓库级 release 令牌对（tag 创建 + tag 推送，单次、钉死 version+SHA） |
 | `hulane_verify_delivery` | 交叉核验完整供应链证据 |
-| `hulane_record_specs_synced` | 校验 merged_sha 树内规格结构并记录 specs_synced |
+| `hulane_record_specs_synced` | 校验 merged_sha 树内 delta 触达的主规格（无快照回退全量）并记录 specs_synced |
 
 MCP stdio server 同时支持当前 `2026-07-28` 发现协议和旧版初始化协议。
 
