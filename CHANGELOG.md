@@ -11,6 +11,10 @@ Versions follow Semantic Versioning.
   产出前按该标准自检、每轮修订以逼近该标准为目标；`hulane-design-critic` 评分
   锚从"顶级工作室执行水准"升级为获奖作品水准（9 分通过线 = 可与获奖作品同台
   竞争），不再以普通内部工具或上一轮表现为参照。
+- `hulane_record_specs_synced` 主规格校验收窄为 `spec_delta_dir` 触达的
+  capability（与规格同步"只重写被触达 capability"的语义对齐），delta 目录在
+  提交树里无 `specs/` 快照时回退全量校验保持保守；校验结果新增 `scope` 字段
+  区分 `delta`/`all`，工具描述同步更新。
 
 ## [3.7.0] - 2026-10-06
 
