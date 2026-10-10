@@ -9,7 +9,7 @@ import { runPreflight } from "../scripts/lib/preflight.mjs";
 import { initializeTargetRepository } from "../scripts/lib/initializer.mjs";
 import { writeProjection } from "../scripts/lib/projection.mjs";
 import { DEFAULT_PR_CHECK, verifyPullRequestChecks } from "../scripts/lib/pr-checks.mjs";
-import { isCapabilitySpecPath, validateSpecFile } from "../scripts/lib/specs.mjs";
+import { CAPABILITY_SPEC_FILE, isCapabilitySpecPath, SPECS_DIR, validateSpecFile } from "../scripts/lib/specs.mjs";
 
 const objectSchema = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string", minLength: 1 };
@@ -120,7 +120,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: "hulane_record_specs_synced",
-    description: "Validate the openspec/specs capability-spec structure inside the exact specs_commit_sha tree (Git object read, not working tree), then record the specs_synced evidence event. specs_commit_sha must equal the recorded merged_sha.",
+    description: "Validate the capability main specs touched by spec_delta_dir (falls back to the full openspec/specs tree when the delta carries no specs/ snapshots) inside the exact specs_commit_sha tree (Git object read, not working tree), then record the specs_synced evidence event. specs_commit_sha must equal the recorded merged_sha.",
     inputSchema: objectSchema({
       id, actor: { const: "orchestrator" }, evidence: text,
       specs_commit_sha: commitSha, spec_delta_dir: text,
@@ -159,7 +159,9 @@ function persist(root, item, { sync = true, repository, projection = {} } = {}) 
 // 用 git 对象库直接读 specs_commit_sha 提交树里的 openspec/specs 主规格并做
 // 结构校验——不依赖工作区状态(合并发生在远端,本地工作区可能还没更新)。
 // 提交不在本地对象库时先 fetch 一次默认远端再重试。
-function validateSpecsTreeAtCommit(root, commitSha) {
+// 校验范围优先收窄为 spec_delta_dir 触达的 capability(与规格同步"只重写被触达 capability"
+// 的语义对齐);delta 目录在树里没有 specs/ 快照时回退全量,保持保守。
+function validateSpecsTreeAtCommit(root, commitSha, deltaDir = "") {
   const git = (args) => {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
     if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${(result.stderr || result.stdout).trim()}`);
@@ -175,15 +177,32 @@ function validateSpecsTreeAtCommit(root, commitSha) {
   if (!specFiles.length) {
     throw new Error(`commit ${commitSha} carries no openspec/specs/<capability>/spec.md capability specs`);
   }
+  const normalizedDelta = String(deltaDir ?? "").replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  let touchedCapabilities = null;
+  if (normalizedDelta) {
+    const deltaSpecPrefix = `${normalizedDelta}/specs/`;
+    const deltaSpecFiles = git(["ls-tree", "-r", "--name-only", commitSha, "--", deltaSpecPrefix])
+      .split(/\r?\n/).map((line) => line.trim())
+      .filter((file) => file.startsWith(deltaSpecPrefix) && file.endsWith(`/${CAPABILITY_SPEC_FILE}`));
+    if (deltaSpecFiles.length) {
+      touchedCapabilities = new Set(deltaSpecFiles.map((file) => file.slice(deltaSpecPrefix.length).replace(/\/spec\.md$/, "")));
+    }
+  }
+  const targets = touchedCapabilities
+    ? specFiles.filter((file) => touchedCapabilities.has(file.slice(SPECS_DIR.length + 1).replace(/\/spec\.md$/, "")))
+    : specFiles;
+  if (!targets.length) {
+    throw new Error(`delta ${normalizedDelta} in commit ${commitSha} touches no openspec/specs/<capability>/spec.md main spec`);
+  }
   const validated = [];
-  for (const file of specFiles) {
+  for (const file of targets) {
     const result = validateSpecFile(file, git(["show", `${commitSha}:${file}`]));
     if (!result) throw new Error(`${file} in commit ${commitSha} is not a recognizable spec document`);
     validated.push(result.kind === "capability"
       ? { file, capability: result.capability, requirements: result.requirements.length }
       : { file, groups: result.groups.map((group) => group.group) });
   }
-  return { commit: commitSha, specs: validated };
+  return { commit: commitSha, scope: touchedCapabilities ? "delta" : "all", specs: validated };
 }
 
 function liveFacts(root, item, repository) {
@@ -367,7 +386,7 @@ export function callTool(name, args = {}, context = {}) {
       throw new Error("specs_commit_sha must equal the recorded merged_sha");
     }
     // 先校验 merged_sha 提交树里的主规格结构,非法即拒绝,不动状态
-    const specs_validation = validateSpecsTreeAtCommit(root, args.specs_commit_sha);
+    const specs_validation = validateSpecsTreeAtCommit(root, args.specs_commit_sha, args.spec_delta_dir);
     const next = applyEvent(item, "specs_synced", {
       actor: args.actor,
       evidence: args.evidence,
