@@ -5,6 +5,8 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-10-10
+
 ### Changed
 
 - 设计环节品质标准锚定 Awwwards / Webby Awards / FWA 获奖品质：`hulane-designer`
