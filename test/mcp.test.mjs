@@ -237,3 +237,96 @@ test("hulane_record_specs_synced rejects malformed trees and mismatched SHAs", (
     sync: false,
   }, { cwd: root, pluginRoot }), /must equal the recorded merged_sha/);
 });
+
+// 假 gh 垫片：记录每次调用到 gh-calls.log，第 FAKE_GH_FAIL_ON 次调用模拟失败，
+// `issue create` 输出固定 Issue URL，其余调用静默成功。
+function fakeGhBin(sandbox) {
+  const bin = path.join(sandbox, "bin");
+  fs.mkdirSync(bin, { recursive: true });
+  const shim = [
+    "#!/bin/sh",
+    'sandbox="$(cd "$(dirname "$0")/.." && pwd)"',
+    'printf \'%s\\n\' "$*" >> "$sandbox/gh-calls.log"',
+    'n=$(cat "$sandbox/gh-counter" 2>/dev/null || echo 0)',
+    "n=$((n + 1))",
+    'printf \'%s\\n\' "$n" > "$sandbox/gh-counter"',
+    'if [ -n "$FAKE_GH_FAIL_ON" ] && [ "$n" -eq "$FAKE_GH_FAIL_ON" ]; then',
+    '  echo "simulated gh failure" >&2',
+    "  exit 1",
+    "fi",
+    'if [ "$1" = "issue" ] && [ "$2" = "create" ]; then',
+    '  echo "https://github.com/example/org/issues/99"',
+    "fi",
+    "exit 0",
+  ].join("\n");
+  fs.writeFileSync(path.join(bin, "gh"), shim, { mode: 0o755 });
+  return bin;
+}
+
+function withFakeGh(sandbox, fn) {
+  const bin = fakeGhBin(sandbox);
+  const previousPath = process.env.PATH;
+  const previousFailOn = process.env.FAKE_GH_FAIL_ON;
+  process.env.PATH = `${bin}${path.delimiter}${previousPath}`;
+  delete process.env.FAKE_GH_FAIL_ON;
+  try {
+    return fn(sandbox);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousFailOn === undefined) delete process.env.FAKE_GH_FAIL_ON;
+    else process.env.FAKE_GH_FAIL_ON = previousFailOn;
+  }
+}
+
+const openWorkItemArgs = {
+  title: "Demo item",
+  type: "feature",
+  risk_level: "low",
+  size: "small",
+  delivery_required: false,
+  delivery_reason: "batched release",
+  skip_allowed: true,
+  spec_sync_required: false,
+  planner_summary: "demo",
+  acceptance_criteria: ["demo criterion"],
+  repository: "example/org",
+};
+
+test("open_work_item validates input before creating the GitHub Issue", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-open-"));
+  const root = gitRepository();
+  withFakeGh(sandbox, () => {
+    // 历史六犯：non-runtime 发版策略缺 delivery_reason
+    assert.throws(
+      () => callTool("hulane_open_work_item", { ...openWorkItemArgs, delivery_reason: " " }, { cwd: root }),
+      /Non-runtime delivery policy requires delivery_reason/,
+    );
+    // 历史第二类：small 必须 low
+    assert.throws(
+      () => callTool("hulane_open_work_item", { ...openWorkItemArgs, risk_level: "medium" }, { cwd: root }),
+      /size small requires risk_level low/,
+    );
+    // 校验失败时 gh 绝不能被调用（否则又会留下孤儿 Issue）
+    assert.equal(fs.existsSync(path.join(sandbox, "gh-calls.log")), false);
+  });
+});
+
+test("open_work_item auto-closes the created Issue when initialization fails midway", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-rollback-"));
+  const root = gitRepository();
+  withFakeGh(sandbox, () => {
+    process.env.FAKE_GH_FAIL_ON = "2"; // 第 2 次调用 = issue edit 标题重命名
+    try {
+      assert.throws(
+        () => callTool("hulane_open_work_item", openWorkItemArgs, { cwd: root }),
+        (error) => /Issue was created at /.test(error.message) && /auto-closed/.test(error.message),
+      );
+    } finally {
+      delete process.env.FAKE_GH_FAIL_ON;
+    }
+    const calls = fs.readFileSync(path.join(sandbox, "gh-calls.log"), "utf8");
+    assert.match(calls, /issue create/);
+    assert.match(calls, /issue edit/);
+    assert.match(calls, /issue close/); // 兜底回滚关掉了刚建的 Issue
+  });
+});

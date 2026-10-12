@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEvent, createWorkItem, normalizeWorkItem, validateWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, normalizeWorkItem, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
 
 const sha = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
@@ -457,4 +457,55 @@ test("legacy items normalize approval_source to issue_stop and validateWorkItem 
     () => move(runtimeItem({ spec_sync_required: false }), "approve_requirement", { approval_source: "chat" }, "human:owner"),
     /Invalid Work Item REQ-12: .*invalid approval_source/,
   );
+});
+
+test("validateWorkItemInput rejects every cross-field violation before an Issue can be created", () => {
+  const base = {
+    title: "Demo",
+    type: "feature",
+    risk_level: "low",
+    size: "small",
+    delivery_required: false,
+    delivery_reason: "on-demand batched release",
+    skip_allowed: true,
+    spec_sync_required: false,
+  };
+  assert.equal(validateWorkItemInput(base).size, "small");
+
+  // 六犯根因：non-runtime 发版策略缺 delivery_reason
+  assert.throws(
+    () => validateWorkItemInput({ ...base, delivery_reason: " " }),
+    /Non-runtime delivery policy requires delivery_reason/,
+  );
+  // 历史第二类：small 必须 low
+  assert.throws(
+    () => validateWorkItemInput({ ...base, risk_level: "medium" }),
+    /size small requires risk_level low/,
+  );
+  assert.throws(
+    () => validateWorkItemInput({ ...base, risk_level: "urgent" }),
+    /risk_level must be one of/,
+  );
+  assert.throws(
+    () => validateWorkItemInput({ ...base, title: "  " }),
+    /title is required/,
+  );
+  assert.throws(
+    () => validateWorkItemInput({ ...base, size: "nano" }),
+    /size must be one of/,
+  );
+  assert.throws(
+    () => validateWorkItemInput({ ...base, delivery_required: true, delivery_reason: null }),
+    /Runtime delivery cannot allow skip/,
+  );
+  assert.throws(
+    () => validateWorkItemInput({ ...base, spec_sync_required: true }),
+    /size small never requires spec sync/,
+  );
+  // standard 默认值派生：spec_sync 默认必须、发版默认运行时
+  const standard = validateWorkItemInput({ title: "Demo", risk_level: "high" });
+  assert.equal(standard.size, "standard");
+  assert.equal(standard.deliveryRequired, true);
+  assert.equal(standard.skipAllowed, false);
+  assert.equal(standard.specSyncRequired, true);
 });

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { applyEvent, createWorkItem, validateWorkItem } from "../scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, validateWorkItem, validateWorkItemInput } from "../scripts/lib/state-machine.mjs";
 import { findControlRoot, getItem, initializeRepositoryState, putItem, readStore } from "../scripts/lib/state-store.mjs";
 import { hydrateItemFromGitHub, resolveRepository, runGh, syncItemToGitHub } from "../scripts/lib/github-state.mjs";
 import { createWorktree } from "../scripts/lib/worktree.mjs";
@@ -246,10 +246,14 @@ export function callTool(name, args = {}, context = {}) {
   if (name === "hulane_initialize") return initializeTargetRepository(root, context.pluginRoot, args.repository ?? null);
 
   if (name === "hulane_open_work_item") {
+    // 输入校验前置于建 Issue：参数不合法时绝不产生 GitHub Issue。
+    // 此前的顺序是先建 Issue 再校验且失败无回滚，会留下孤儿 Issue。
+    validateWorkItemInput(args);
     const repository = repositoryFor(root, args.repository);
     const issueUrl = runGh(["issue", "create", "--repo", repository, "--title", args.title, "--body", issueBody(args)], { cwd: root });
+    let issueNumber = null;
     try {
-      const issueNumber = Number(issueUrl.match(/\/issues\/(\d+)(?:\?.*)?$/)?.[1]);
+      issueNumber = Number(issueUrl.match(/\/issues\/(\d+)(?:\?.*)?$/)?.[1]);
       if (!Number.isInteger(issueNumber)) throw new Error(`Could not parse Issue number from: ${issueUrl}`);
       const prefix = args.type === "bug" ? "BUG" : "REQ";
       const workItemId = `${prefix}-${issueNumber}`;
@@ -277,7 +281,21 @@ export function callTool(name, args = {}, context = {}) {
       });
       return { ...result, issue_url: issueUrl };
     } catch (error) {
-      throw new Error(`Issue was created at ${issueUrl}, but Work Item initialization failed: ${error.message}`);
+      // 兜底回滚：初始化半途失败时关闭刚创建的 Issue，杜绝孤儿。
+      // 回滚自身失败不掩盖原始错误，把两条信息一并抛出。
+      let rollback = "";
+      if (Number.isInteger(issueNumber)) {
+        try {
+          runGh([
+            "issue", "close", String(issueNumber), "--repo", repository,
+            "--comment", `孤儿 Issue 自动回滚：Work Item 初始化失败（${error.message}）。本单未入状态机，请忽略并等待重试新建。`,
+          ], { cwd: root });
+          rollback = `; orphan issue #${issueNumber} auto-closed`;
+        } catch (rollbackError) {
+          rollback = `; auto-close of orphan issue #${issueNumber} failed: ${rollbackError.message}`;
+        }
+      }
+      throw new Error(`Issue was created at ${issueUrl}, but Work Item initialization failed: ${error.message}${rollback}`);
     }
   }
 

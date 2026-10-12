@@ -197,30 +197,37 @@ export function normalizeWorkItem(item) {
   return next;
 }
 
-export function createWorkItem(input, now = () => new Date()) {
-  const idMatch = String(input.id ?? "").match(ID_PATTERN);
-  if (!idMatch) throw new Error("Work Item id must match REQ-<issue> or BUG-<issue>");
-  const issueNumber = Number(input.issue_number);
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error("issue_number must be a positive integer");
-  if (Number(idMatch[2]) !== issueNumber) throw new Error("Work Item id number must equal issue_number");
+// 纯输入校验，不依赖 GitHub Issue：open_work_item 必须在建 Issue 之前调用。
+// 历史上校验发生在建 Issue 之后且失败无回滚，参数不合法会留下
+// 「有 Issue 无状态机」的孤儿（delivery_reason 一项即六犯）。
+// 返回建单派生字段，createWorkItem 复用同一份逻辑，双处不漂移。
+export function validateWorkItemInput(input) {
   if (!RISKS.includes(input.risk_level)) throw new Error(`risk_level must be one of ${RISKS.join(", ")}`);
   if (!String(input.title ?? "").trim()) throw new Error("title is required");
-
   const size = input.size ?? "standard";
   if (!SIZES.includes(size)) throw new Error(`size must be one of ${SIZES.join(", ")}`);
   if (size === "small" && input.risk_level !== "low") throw new Error("size small requires risk_level low");
-
   const deliveryRequired = asBoolean(input.delivery_required, true);
   const skipAllowed = asBoolean(input.skip_allowed, false);
   if (deliveryRequired && skipAllowed) throw new Error("Runtime delivery cannot allow skip");
   if (!deliveryRequired && !String(input.delivery_reason ?? "").trim()) {
     throw new Error("Non-runtime delivery policy requires delivery_reason");
   }
-
   // 规格同步要求:standard 默认必须(planner 显式豁免纯基建/纯文档条目),
   // small 恒 false(快车道不吃规格层前置)
   const specSyncRequired = asBoolean(input.spec_sync_required, size !== "small");
   if (size === "small" && specSyncRequired) throw new Error("size small never requires spec sync");
+  return { size, deliveryRequired, skipAllowed, specSyncRequired };
+}
+
+export function createWorkItem(input, now = () => new Date()) {
+  const checked = validateWorkItemInput(input);
+  const idMatch = String(input.id ?? "").match(ID_PATTERN);
+  if (!idMatch) throw new Error("Work Item id must match REQ-<issue> or BUG-<issue>");
+  const issueNumber = Number(input.issue_number);
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error("issue_number must be a positive integer");
+  if (Number(idMatch[2]) !== issueNumber) throw new Error("Work Item id number must equal issue_number");
+  const { size, deliveryRequired, skipAllowed, specSyncRequired } = checked;
 
   const timestamp = nowIso(now);
   const item = {

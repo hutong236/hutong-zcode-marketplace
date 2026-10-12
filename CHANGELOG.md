@@ -5,6 +5,22 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.7.2] - 2026-10-12
+
+### Fixed
+
+- `hulane_open_work_item` 输入校验前置于建 Issue：提取 `validateWorkItemInput`
+  纯函数（risk/title 枚举、size 枚举、small⇒low、运行时发版禁 skip、non-runtime
+  必带 delivery_reason、small 恒不要求规格同步），`createWorkItem` 复用同一份
+  逻辑。参数不合法时不再产生 GitHub Issue——此前「先建 Issue 后校验且失败无
+  回滚」的顺序在 delivery_reason 一项上已累计留下六个孤儿 Issue。
+- `hulane_open_work_item` 建 Issue 之后任何一步失败（标题改名/状态初始化/落盘
+  同步）自动关闭刚创建的 Issue 并留回滚评论；回滚自身失败不掩盖原始错误，两条
+  信息一并抛出。MCP server 进程内部的 gh 调用不经 agent 侧 PreToolUse 守卫，
+  自动回滚可行。
+- 新增 fake-gh PATH 垫片测试锚定两条路径：校验失败时 gh 零调用；中途失败时
+  错误含回滚结果且调用序列含 `issue close`。
+
 ## [3.7.1] - 2026-10-10
 
 ### Changed
