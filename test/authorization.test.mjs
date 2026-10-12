@@ -29,13 +29,13 @@ function repositoryWithItem(status, overrides = {}) {
   return { root, item };
 }
 
-// release 令牌夹具:本地 bare origin + 已推送的 main 分支,
+// release 令牌夹具:本地 bare origin + 已推送的初始分支(默认 main,可指定 master 等),
 // 使 git ls-remote 校验在离线环境可复现
-function releaseRepository() {
+function releaseRepository(initialBranch = "main") {
   const origin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-release-origin-")));
-  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  execFileSync("git", ["init", "-q", "--bare", "-b", initialBranch, origin]);
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-release-")));
-  execFileSync("git", ["init", "-q", "-b", "main", root]);
+  execFileSync("git", ["init", "-q", "-b", initialBranch, root]);
   for (const [key, value] of [["user.email", "test@example.com"], ["user.name", "Hulane Test"]]) {
     execFileSync("git", ["config", key, value], { cwd: root });
   }
@@ -43,7 +43,7 @@ function releaseRepository() {
   execFileSync("git", ["add", "README.md"], { cwd: root });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: root });
   execFileSync("git", ["remote", "add", "origin", origin], { cwd: root });
-  execFileSync("git", ["push", "-q", "origin", "main"], { cwd: root });
+  execFileSync("git", ["push", "-q", "origin", initialBranch], { cwd: root });
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   return { root, origin, sha: head };
 }
@@ -208,7 +208,7 @@ test("state-verified pr merge enforces the same pinned head SHA as tokens", () =
   assert.equal(item.id, "REQ-25");
 });
 
-test("release issuance validates SemVer, 40-hex SHA, origin/main HEAD, remote tag absence, and orchestrator actor", () => {
+test("release issuance validates SemVer, 40-hex SHA, origin default-branch HEAD, remote tag absence, and orchestrator actor", () => {
   const { root, sha } = releaseRepository();
   assert.throws(
     () => issueReleaseAuthorization(root, { version: "1.2", sha, evidence: "release" }, clock),
@@ -220,7 +220,7 @@ test("release issuance validates SemVer, 40-hex SHA, origin/main HEAD, remote ta
   );
   assert.throws(
     () => issueReleaseAuthorization(root, { version: "v1.2.3", sha: "b".repeat(40), evidence: "release" }, clock),
-    /origin\/main HEAD/,
+    /origin default-branch HEAD/,
   );
   assert.throws(
     () => issueReleaseAuthorization(root, { version: "v1.2.3", sha, actor: "hulane-coder", evidence: "release" }, clock),
@@ -250,6 +250,42 @@ test("release issuance validates SemVer, 40-hex SHA, origin/main HEAD, remote ta
   const prefixed = issueReleaseAuthorization(root, { version: "v1.2.5", sha: sha.toUpperCase(), evidence: "release" }, clock);
   assert.equal(prefixed.version, "v1.2.5");
   assert.equal(prefixed.sha, sha);
+});
+
+test("release issuance accepts repositories whose origin default branch is master (no main)", () => {
+  const { root, sha } = releaseRepository("master");
+  const issued = issueReleaseAuthorization(root, { version: "v1.0.0", sha, evidence: "release" }, clock);
+  assert.equal(issued.version, "v1.0.0");
+  assert.equal(issued.sha, sha);
+});
+
+test("release issuance follows the symref default branch and ignores a stale main ref", () => {
+  const origin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-release-origin-")));
+  execFileSync("git", ["init", "-q", "--bare", "-b", "master", origin]);
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-release-")));
+  execFileSync("git", ["init", "-q", "-b", "master", root]);
+  for (const [key, value] of [["user.email", "test@example.com"], ["user.name", "Hulane Test"]]) {
+    execFileSync("git", ["config", key, value], { cwd: root });
+  }
+  fs.writeFileSync(path.join(root, "README.md"), "stale\n");
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  execFileSync("git", ["commit", "-qm", "stale main"], { cwd: root });
+  execFileSync("git", ["remote", "add", "origin", origin], { cwd: root });
+  execFileSync("git", ["push", "-q", "origin", "HEAD:refs/heads/main"], { cwd: root });
+  fs.writeFileSync(path.join(root, "README.md"), "default\n");
+  execFileSync("git", ["add", "README.md"], { cwd: root });
+  execFileSync("git", ["commit", "-qm", "master head"], { cwd: root });
+  execFileSync("git", ["push", "-q", "origin", "master"], { cwd: root });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+
+  // 远端同时存在陈旧 main 与默认分支 master:以 symref 解析的 master HEAD 为基准
+  const issued = issueReleaseAuthorization(root, { version: "v2.0.0", sha: head, evidence: "release" }, clock);
+  assert.equal(issued.version, "v2.0.0");
+  assert.equal(issued.sha, head);
+  assert.throws(
+    () => issueReleaseAuthorization(root, { version: "v2.0.1", sha: "c".repeat(40), evidence: "release" }, clock),
+    /origin default-branch HEAD/,
+  );
 });
 
 test("release tokens are single-use, TTL-bound, leg-specific, and pinned to version+SHA", () => {

@@ -4,7 +4,7 @@ description: 用于 Hulane 项目的功能、缺陷、重构、GitHub Issue、Pu
 when_to_use: 只要用户要求创建、批准、恢复、实现、测试、评审 Hulane 需求或缺陷，或查询其交付状态时使用。
 metadata:
   author: Hulane Project
-  version: 3.7.2
+  version: 3.7.3
 ---
 
 # Hulane Development Skill
@@ -85,7 +85,7 @@ Create GitHub Issue first, then derive `REQ-<issue-number>` for feature/refactor
 
 ## On-demand batched releases
 
-Releases are explicit, batched events, not a per-merge ritual — this respects GitHub free-plan quotas (Actions minutes and GHCR storage) on private repositories. Skipped items accumulate on the default branch; a skip-allowed item closes itself via `policy_skip` right after merge, so no per-item confirmation stands between merge and Done. When the user asks to ship, run `/hulane_release vX.Y.Z` — no work item is created; the command shows the merged-PR batch, tags origin/main HEAD with a scoped one-use release token pair, and Build Checker verifies the image. To ship one item immediately instead, confirm the tag at that item's own Gate C.
+Releases are explicit, batched events, not a per-merge ritual — this respects GitHub free-plan quotas (Actions minutes and GHCR storage) on private repositories. Skipped items accumulate on the default branch; a skip-allowed item closes itself via `policy_skip` right after merge, so no per-item confirmation stands between merge and Done. When the user asks to ship, run `/hulane_release vX.Y.Z` — no work item is created; the command shows the merged-PR batch, tags the origin default-branch HEAD (resolved via `git ls-remote --symref origin HEAD`; not always `main`) with a scoped one-use release token pair, and Build Checker verifies the image. To ship one item immediately instead, confirm the tag at that item's own Gate C.
 
 ## Done definition
 

@@ -73,14 +73,25 @@ function commandHasNumber(command, number) {
   return new RegExp(`(?:^|\\s)${number}(?:\\s|$)`).test(command);
 }
 
-// 远端加固:签发与消费都以远端事实为准,不信本地引用(可能陈旧)
+// 远端加固:签发与消费都以远端事实为准,不信本地引用(可能陈旧)。
+// 默认分支名不一定是 main(如 master 主分支仓库),用 --symref 解析 origin 真实默认分支 HEAD
 function remoteMainHead(root) {
-  const result = spawnSync("git", ["ls-remote", "origin", "refs/heads/main"], { cwd: root, encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`Release authorization requires a reachable origin remote: ${(result.stderr || result.stdout).trim()}`);
+  const symref = spawnSync("git", ["ls-remote", "--symref", "origin", "HEAD"], { cwd: root, encoding: "utf8" });
+  if (symref.status !== 0) {
+    throw new Error(`Release authorization requires a reachable origin remote: ${(symref.stderr || symref.stdout).trim()}`);
   }
-  const line = result.stdout.trim().split(/\r?\n/).filter(Boolean)[0];
-  return line ? line.split(/\s+/)[0] : null;
+  const headLine = symref.stdout.trim().split(/\r?\n/).filter(Boolean).find((line) => !line.startsWith("ref:"));
+  if (headLine) return headLine.split(/\s+/)[0];
+  // 老版本 git 不支持 --symref 时按 main → master 顺序探测
+  for (const branch of ["refs/heads/main", "refs/heads/master"]) {
+    const result = spawnSync("git", ["ls-remote", "origin", branch], { cwd: root, encoding: "utf8" });
+    if (result.status !== 0) {
+      throw new Error(`Release authorization requires a reachable origin remote: ${(result.stderr || result.stdout).trim()}`);
+    }
+    const line = result.stdout.trim().split(/\r?\n/).filter(Boolean)[0];
+    if (line) return line.split(/\s+/)[0];
+  }
+  return null;
 }
 
 function remoteTagExists(root, tag) {
@@ -192,7 +203,7 @@ export function issueReleaseAuthorization(root, { version, sha, ttlSeconds = 120
   const normalizedSha = String(sha ?? "").toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(normalizedSha)) throw new Error("Release sha must be a 40-character commit SHA");
   const mainHead = remoteMainHead(root);
-  if (mainHead !== normalizedSha) throw new Error("Release sha must equal the current origin/main HEAD");
+  if (mainHead !== normalizedSha) throw new Error("Release sha must equal the current origin default-branch HEAD");
   if (remoteTagExists(root, tag)) throw new Error(`Release tag ${tag} already exists on the remote; refusing to re-issue a release authorization`);
 
   const issuedAt = now();

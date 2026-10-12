@@ -5,6 +5,19 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [3.7.3] - 2026-10-12
+
+### Fixed
+
+- `hulane_authorize_release` 远端加固不再假设默认分支名为 main：`remoteMainHead`
+  改用 `git ls-remote --symref origin HEAD` 解析 origin 真实默认分支 HEAD（取
+  第一条非 `ref:` 行；老版本 git 无 `--symref` 输出时按 main → master 顺序探测），
+  SHA 校验对象从硬编码的 `refs/heads/main` 改为实际默认分支。默认分支为 master
+  的仓库此前无法签发批量发版授权（恒报 "must equal the current origin/main
+  HEAD"），首次批量发版即被阻。错误文案同步改为 "origin default-branch HEAD"
+  以便区分补丁是否加载。新增测试锚定：纯 master 仓库可签发；远端同时存在陈旧
+  main 时以 symref 默认分支为准，陈旧 main 不参与校验。
+
 ## [3.7.2] - 2026-10-12
 
 ### Fixed
