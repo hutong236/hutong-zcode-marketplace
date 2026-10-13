@@ -14,7 +14,7 @@ flowchart TD
   U(["用户提出需求"]) --> CL["主 Agent 检查仓库并分类"]
   CL -->|"不是开发工作"| NO["不建 Issue，直接答复"]
   CL -->|"是开发工作"| GA
-  GA{{"Gate A：立项后停在 waiting_approval"}} -->|"用户 /hulane_approve"| IMPL["实现循环<br>（隔离 worktree，Coder → Tester + Reviewer）"]
+  GA{{"Gate A：立项后同轮自动放行<br>（默认 auto_intake；白名单三种停等）"}} -->|"同轮放行或 /hulane_approve"| IMPL["实现循环<br>（隔离 worktree，Coder → Tester + Reviewer）"]
   IMPL --> PR["授权推送 → 建 PR → 核验 PR checks"]
   PR --> GB{"Gate B：风险分级"}
   GB -->|"低/中风险"| MG["直接合并"]
@@ -24,9 +24,13 @@ flowchart TD
   POL -->|"明确要出镜像"| TAG["等 /hulane_tag_approve<br>→ 打 tag → 构建镜像 → 证据核验"] --> DONE
 ```
 
-全程只有三个可能的人工停点：Gate A（必停）、Gate B（仅高风险）、Gate C（仅要求出镜像的条目）。
-默认发版策略下，一个小需求从提出到 Done 只停 Gate A 一次。
-spec_sync_required 工单（standard 默认开启，small 恒关闭）在关单前还必须通过
+Gate A 开单同轮默认自动放行（默认 `auto_intake`；用户原话含明确批准措辞时走
+`pre_authorized`），人工停点收窄为白名单：Gate A 仅在 risk_level=high、Planner
+报告需求歧义/scope_questions 未闭合、或用户显式暂停时停等；Gate B（仅高风险）、
+Gate C（仅要求出镜像的条目）不变。默认发版策略下，一个不落白名单的小需求
+从提出到 Done 零人工停点。
+spec_sync_required 工单（standard 默认开启，small 恒关闭）不再构成 Gate A 停等
+理由（delta 全文随审批包评论留痕），但在关单前仍必须通过
 规格校验与记录环节（第 5 节"规格校验与记录"节点），由状态机与守卫双层强制。
 
 ---
@@ -50,8 +54,8 @@ flowchart TD
   CR --> SC{"≥9/10？"}
   SC -->|否，且 <3 轮| DSN
   SC -->|是 或 3 轮用尽| NT
-  NT --> GA{{"Gate A：waiting_approval，<br>需求 + 方案 + 页面设计（含评分历史）<br>一并审批，停止——不建分支、不改业务代码"}}
-  GA -->|"/hulane_approve：Issue 上评论批准<br>→ approve_requirement"| RDY["ready"]
+  NT --> GA{{"Gate A：审批包（需求 + 方案 + 页面设计含评分历史<br>+ spec delta 全文）发 Issue 评论留痕；<br>白名单三种情形停止——不建分支、不改业务代码"}}
+  GA -->|"默认：同轮 approve_requirement（auto_intake，<br>显式批准原话走 pre_authorized）；白名单停等：<br>/hulane_approve Issue 上评论批准"| RDY["ready"]
 ```
 
 要点：
@@ -134,7 +138,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   MR(["pr_merged 已记录"]) --> POL{"发版策略"}
-  POL -->|"默认：delivery_required=false<br>且 skip_allowed=true"| PS["policy_skip：引用 Gate A 批准证据<br>（Issue 号、批准人、delivery_reason），<br>无人工停"]
+  POL -->|"默认：delivery_required=false<br>且 skip_allowed=true"| PS["policy_skip：引用 Gate A 批准证据<br>（Issue 号、approval_source、delivery_reason），<br>无人工停"]
   PS --> SPEC{"规格校验与记录<br>spec_sync_required？"}
   SPEC -->|"是且未记录<br>hulane_record_specs_synced<br>(specs_commit_sha=merged_sha)<br>树内 delta 触达主规格校验通过<br>→ 记录 specs_synced（自环）"| C1["关 Issue（状态核验，无 token）<br>记录 issue_closed → Done"]
   SPEC -->|"否（small / 豁免 / 存量祖父）"| C1

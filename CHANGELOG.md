@@ -5,6 +5,22 @@ Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Gate A 白名单化（REQ-7）：开单同轮默认自动放行——`approval_source` 枚举扩为
+  `issue_stop` | `pre_authorized` | `auto_intake`（schema 同步），编排者开单同轮以
+  actor="orchestrator"、`patch.approval_source="auto_intake"`（evidence 引用用户
+  本轮原话）应用 `approve_requirement` 直达 ready；用户原话含明确批准措辞时仍走
+  `pre_authorized`（actor=human:<身份>）。停等白名单收窄为三种——risk_level=high
+  （状态机强制）、Planner 报告需求歧义/scope_questions 未闭合、用户显式暂停；
+  `spec_sync_required=true` 不再构成停等理由（pre_authorized 硬边界同步放宽为仅
+  high 拒，特权单调性）。actor 诚实性由状态机强制：`auto_intake` 的 actor 必须
+  恰为 "orchestrator"（出现 human:<身份> 形式反而抛错），`pre_authorized` 的
+  actor 必须匹配 human:<身份> 形式。审批包（含 spec delta 全文）仍必须先发
+  Issue 评论留痕，自动放行不豁免；`/hulane_approve` 保留为人工覆盖通道
+  （issue_stop 语义不变），`approval_source` 写入通道收口与存量工单祖父回填
+  不受影响，policy_skip 的 evidence 措辞从「批准人」改为「approval_source」。
+
 ## [3.7.3] - 2026-10-12
 
 ### Fixed

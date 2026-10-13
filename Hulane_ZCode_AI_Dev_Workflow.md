@@ -59,7 +59,8 @@ GitHub Issue 评论包含 `cmdb-dev-state:v2` 机器块，状态标签为
 3. `hulane_open_work_item` 先创建 GitHub Issue；
 4. 用 Issue Number 生成 `REQ-<number>` 或 `BUG-<number>`；
 5. 写入状态与投影；
-6. 停在 `waiting_approval`。
+6. 落在 `waiting_approval`，随后按第 4 节 Gate A 处置:同轮自动放行,或白名单
+   三种情形停等。
 
 Gate A 前禁止创建开发 worktree、修改业务代码、创建 PR 或合并。
 
@@ -79,18 +80,24 @@ git 排除）；原型由 orchestrator 渲染截图后派 `hulane-design-critic`
 /hulane_approve REQ-123
 ```
 
-批准记录必须是 `approve_requirement`，actor 使用
-`human:<identity>`。随后才创建 `.hulane/worktrees/REQ-123` 和独立分支。
+开单同轮默认自动放行：开单完成后，编排者在同一轮应用 `approve_requirement`，
+默认 actor 为 `orchestrator`、`patch.approval_source="auto_intake"`、evidence
+引用用户本轮原话，工单不停等直达 `ready`；用户原话含明确批准措辞
+（如「直接做」「预授权」）时改用 `human:<身份>` actor 与
+`patch.approval_source="pre_authorized"`（evidence 引用该批准原话与日期）。
+无论走哪条同轮通道，审批包（需求、方案、页面设计含评分历史、spec delta
+全文或摘要+路径）都作为一条 GitHub Issue 评论先行发布留痕，自动放行
+不豁免该评论。
 
-预授权例外：用户在需求原话中已明确批准（如「直接做」「预授权」）且
-工单 `risk_level` 为 low/medium、`spec_sync_required: false` 时，编排者可在
-开单同轮以 `human:<身份>` actor 发出 `approve_requirement`
-（`patch.approval_source="pre_authorized"`，evidence 引用用户原话与日期），
-不停等直达 ready，随后照常进入 worktree/Coder 流程；`/hulane_approve`
-仍是标准 Gate A 入口，记录 `approval_source="issue_stop"`。高风险与规格
-工单不受预授权覆盖，必须照常停在 `waiting_approval`——该硬边界由状态机
-强制，越界的预授权事件直接抛错、状态不变；V3.7.0 前的存量工单由
-normalizeWorkItem 回填 `issue_stop`。
+仅三种白名单情形维持 STOP、等待 `/hulane_approve`（人工覆盖通道，记录
+`approval_source="issue_stop"`）：① `risk_level=high`——该硬边界由状态机
+强制，高风险工单的同轮放行事件直接抛错、状态不变；② Planner 报告需求
+歧义或 scope_questions 未闭合；③ 用户明说「等我确认」等显式暂停。
+`spec_sync_required=true` 不再构成停等理由（规格同步前置仍在关单前由状态机
+与守卫双层强制）。actor 诚实性由状态机强制：`auto_intake` 的 actor 必须恰为
+`orchestrator`，`pre_authorized` 的 actor 必须匹配 `human:<身份>` 形式，
+错配即抛错。批准落地后才创建 `.hulane/worktrees/REQ-123` 和独立分支；
+V3.7.0 前的存量工单由 normalizeWorkItem 回填 `issue_stop`。
 
 ### Gate B：高风险合并
 
@@ -118,7 +125,8 @@ Gate B 不能绕过 PR 工作流检查。不具备付费分支保护的私有仓
 Gate C 的人工停等只服务于出镜像的条目。`Planner` 已持久化
 `delivery_required: false` 且 `skip_allowed: true` 的条目——这是默认
 策略——在 `pr_merged` 之后由 orchestrator 立即发出 `policy_skip`
-(证据引用 Gate A 批准记录),自动进入关单流程,不再等待人工确认。
+(证据引用 Gate A 批准记录:Issue 号、approval_source、delivery_reason),
+自动进入关单流程,不再等待人工确认。
 该停等与人工 `approve_skip` 命令保留为手动覆盖路径,适用于条目已停在
 `waiting_tag_confirm` 的场景(例如会话在合并与关单之间中断)。
 

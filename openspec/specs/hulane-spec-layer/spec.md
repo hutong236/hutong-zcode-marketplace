@@ -22,12 +22,17 @@
 
 ### Requirement: delta 全文进 Gate A 审批包
 
-spec_sync_required 工单 SHALL 把 delta 全文作为一条 GitHub Issue 评论随需求与方案一并交 Gate A 审批；delta 过长时允许摘要加仓库内路径。
+spec_sync_required 工单 SHALL 把 delta 全文作为一条 GitHub Issue 评论随需求与方案一并进 Gate A 审批包；delta 过长时允许摘要加仓库内路径。Gate A 同轮自动放行 SHALL 不豁免该评论：评论 SHALL 在同轮放行应用前（或同轮内）发布，作为自动放行的审计留痕。
 
 #### Scenario: Gate A 审批包包含 delta
 
-- WHEN 工单进入 waiting_approval
-- THEN Issue 上存在包含 delta 全文（或摘要+路径）的评论，人工一次批准需求、方案与规格变更
+- WHEN spec_sync_required 工单开单并同轮自动放行
+- THEN Issue 上存在包含 delta 全文（或摘要+路径）的评论，与 approval_source="auto_intake" 的自动放行记录互为审计证据
+
+#### Scenario: 白名单停等时评论先于人工批准
+
+- WHEN 工单落在白名单停等情形等待 /hulane_approve
+- THEN delta 评论已在 waiting_approval 期间发布，人工一次批准需求、方案与规格变更的语义不变
 
 ### Requirement: 主规格智能合并随实现 PR 提交
 

@@ -168,13 +168,25 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5"]);
+  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5", "REQ-7"]);
+  // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
       fs.readFileSync(path.join(archiveRoot, id, DELTA_SPEC_FILE), "utf8"),
     );
     assert.equal(delta.kind, "delta");
-    assert.deepEqual(delta.groups.map((group) => group.group), ["ADDED"]);
+    assert.deepEqual(delta.groups.map((group) => group.group), expectedGroups[id]);
   }
+  const req7 = validateSpecFile(
+    `openspec/changes/archive/REQ-7/${DELTA_SPEC_FILE}`,
+    fs.readFileSync(path.join(archiveRoot, "REQ-7", DELTA_SPEC_FILE), "utf8"),
+  );
+  assert.deepEqual(req7.groups.flatMap((group) => group.requirements), [
+    "Gate A 预授权同轮放行",
+    "预授权硬边界（状态机强制）",
+    "approval_source 留痕与写入通道收口",
+    "delta 全文进 Gate A 审批包",
+  ]);
 });
