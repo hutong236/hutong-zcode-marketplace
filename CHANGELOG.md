@@ -3,7 +3,7 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
-## [Unreleased]
+## [3.8.0] - 2026-10-14
 
 ### Added
 
