@@ -381,36 +381,43 @@ test("Gate A approval is the only event that may revise the spec-sync exemption"
   assert.equal(stillRequired.spec_sync_required, true);
 });
 
-test("pre-authorization passes only inside the low/medium + non-spec hard boundary", () => {
-  // 高风险拒绝:抛错且状态不变
-  const high = runtimeItem({ risk_level: "high", spec_sync_required: false });
+test("same-turn approval hard boundary keeps only high risk out for both channels", () => {
+  // 高风险拒绝:pre_authorized 与 auto_intake 双枚举值都抛错且状态不变
+  const highPre = runtimeItem({ risk_level: "high", spec_sync_required: false });
   assert.throws(
-    () => move(high, "approve_requirement", { approval_source: "pre_authorized" }, "human:owner"),
+    () => move(highPre, "approve_requirement", { approval_source: "pre_authorized" }, "human:owner"),
     /must stop at Gate A/,
   );
-  assert.equal(high.status, "waiting_approval");
+  assert.equal(highPre.status, "waiting_approval");
+  const highAuto = runtimeItem({ risk_level: "high", spec_sync_required: false });
+  assert.throws(
+    () => move(highAuto, "approve_requirement", { approval_source: "auto_intake" }),
+    /must stop at Gate A/,
+  );
+  assert.equal(highAuto.status, "waiting_approval");
 
-  // spec_sync_required 工单拒绝(standard 默认 spec_sync_required=true)
+  // spec_sync_required 不再拒绝:规格工单两条同轮通道都放行(原 throw 断言反转)
   const specItem = runtimeItem({ risk_level: "low" });
   assert.equal(specItem.spec_sync_required, true);
-  assert.throws(
-    () => move(specItem, "approve_requirement", { approval_source: "pre_authorized" }, "human:owner"),
-    /must stop at Gate A/,
-  );
+  const autoSpec = move(specItem, "approve_requirement", { approval_source: "auto_intake" });
+  assert.equal(autoSpec.status, "ready");
+  assert.equal(autoSpec.approval_source, "auto_intake");
+  const preSpec = move(runtimeItem({ risk_level: "low" }), "approve_requirement", { approval_source: "pre_authorized" }, "human:owner");
+  assert.equal(preSpec.status, "ready");
+  assert.equal(preSpec.approval_source, "pre_authorized");
 
-  // 不允许借预授权同轮把规格工单豁免掉
-  assert.throws(
-    () => move(runtimeItem({ risk_level: "low" }), "approve_requirement", { approval_source: "pre_authorized", spec_sync_required: false }, "human:owner"),
-    /must stop at Gate A/,
-  );
+  // 原「不允许借预授权豁免规格」反转为生效:同轮通道可携带 spec 豁免 patch
+  const exempted = move(runtimeItem({ risk_level: "low" }), "approve_requirement", { approval_source: "pre_authorized", spec_sync_required: false }, "human:owner");
+  assert.equal(exempted.status, "ready");
+  assert.equal(exempted.spec_sync_required, false);
 
-  // actor 非 human:<身份> 拒绝(approve_requirement 本就是 human 事件)
+  // pre_authorized 的 actor 非 human:<身份> 仍拒绝(approve_requirement 本就是 human 事件)
   assert.throws(
     () => move(runtimeItem({ risk_level: "medium", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }),
     /human:<identity>/,
   );
 
-  // medium + 非 spec 放行,留痕生效
+  // medium + 非 spec 放行,留痕生效(pre_authorized 保持既有行为)
   const preAuthorized = move(runtimeItem({ risk_level: "medium", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }, "human:owner");
   assert.equal(preAuthorized.status, "ready");
   assert.equal(preAuthorized.human_approval, "approved");
@@ -419,6 +426,79 @@ test("pre-authorization passes only inside the low/medium + non-spec hard bounda
   // low + 非 spec 同样放行
   const lowLane = move(runtimeItem({ risk_level: "low", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }, "human:owner");
   assert.equal(lowLane.approval_source, "pre_authorized");
+});
+
+test("auto_intake is the default same-turn lane with strict actor honesty", () => {
+  // medium + spec 工单 + actor="orchestrator" → ready 且 approval_source="auto_intake"
+  const auto = move(runtimeItem({ risk_level: "medium" }), "approve_requirement", { approval_source: "auto_intake" });
+  assert.equal(auto.status, "ready");
+  assert.equal(auto.human_approval, "approved");
+  assert.equal(auto.approval_source, "auto_intake");
+  assert.equal(auto.history.at(-1).actor, "orchestrator");
+
+  // actor 诚实性:auto_intake 携带 human:<身份> 形式反而抛错(人未敲审批命令不得伪造 human actor)
+  assert.throws(
+    () => move(runtimeItem({ risk_level: "medium" }), "approve_requirement", { approval_source: "auto_intake" }, "human:owner"),
+    /auto_intake" requires actor exactly "orchestrator/,
+  );
+  // 其它任意非 orchestrator actor 同样拒绝
+  assert.throws(
+    () => move(runtimeItem({ risk_level: "low" }), "approve_requirement", { approval_source: "auto_intake" }, "ci-bot"),
+    /auto_intake/,
+  );
+
+  // 回归:pre_authorized + orchestrator 仍抛 human actor 错
+  assert.throws(
+    () => move(runtimeItem({ risk_level: "medium", spec_sync_required: false }), "approve_requirement", { approval_source: "pre_authorized" }),
+    /human:<identity>/,
+  );
+
+  // validateWorkItem 枚举校验:接受 auto_intake、拒绝未知值
+  assert.equal(validateWorkItem({ ...runtimeItem({ spec_sync_required: false }), approval_source: "auto_intake" }), true);
+  assert.throws(
+    () => validateWorkItem({ ...runtimeItem({ spec_sync_required: false }), approval_source: "self_approved" }),
+    /invalid approval_source/,
+  );
+});
+
+test("end-to-end: standard spec item flows green through the auto_intake default lane", () => {
+  let item = createWorkItem({
+    id: "REQ-77",
+    issue_number: 77,
+    title: "Standard spec-carrying change",
+    risk_level: "medium",
+    delivery_required: false,
+    delivery_reason: "Docs and specs; on-demand batched release",
+    skip_allowed: true,
+    spec_sync_required: true,
+  }, clock);
+  assert.equal(item.status, "waiting_approval");
+  assert.equal(item.spec_sync_required, true);
+  assert.equal(item.approval_source, "issue_stop");
+
+  item = move(item, "approve_requirement", { approval_source: "auto_intake" });
+  assert.equal(item.status, "ready");
+  assert.equal(item.approval_source, "auto_intake");
+  assert.equal(item.human_approval, "approved");
+
+  item = move(item, "start_planning", { branch: "hulane/req-77", worktree_path: "/repo/.hulane/worktrees/REQ-77" });
+  item = move(item, "plan_complete");
+  item = move(item, "code_complete");
+  item = move(item, "tests_passed");
+  item = move(item, "review_approved");
+  item = move(item, "pr_created", { pr_number: 77, github_pr_url: "https://github.com/acme/demo/pull/77" });
+  item = move(item, "checks_passed", githubGuard);
+  assert.equal(item.status, "merging");
+  item = move(item, "pr_merged", { merged_sha: sha });
+  assert.equal(item.status, "waiting_tag_confirm");
+  item = move(item, "policy_skip");
+  assert.equal(item.status, "waiting_close");
+  assert.equal(item.tag_confirmation, "skipped_by_policy");
+  item = move(item, "specs_synced", { specs_commit_sha: sha, spec_delta_dir: "openspec/changes/archive/REQ-77" });
+  item = move(item, "issue_closed");
+  assert.equal(item.status, "done");
+  assert.equal(validateWorkItem(item), true);
+  assert.equal(item.approval_source, "auto_intake");
 });
 
 test("approve_requirement defaults approval_source to issue_stop and new items start there", () => {
@@ -435,7 +515,15 @@ test("only approve_requirement may write approval_source", () => {
     /only approve_requirement may set it/,
   );
   assert.throws(
+    () => move(base, "issue_closed", { approval_source: "auto_intake" }),
+    /only approve_requirement may set it/,
+  );
+  assert.throws(
     () => move(base, "specs_synced", { ...specSyncPatch, approval_source: "pre_authorized" }),
+    /only approve_requirement may set it/,
+  );
+  assert.throws(
+    () => move(base, "specs_synced", { ...specSyncPatch, approval_source: "auto_intake" }),
     /only approve_requirement may set it/,
   );
 });

@@ -23,7 +23,7 @@ export const STATES = Object.freeze([
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
 export const SIZES = Object.freeze(["standard", "small"]);
-export const APPROVAL_SOURCES = Object.freeze(["issue_stop", "pre_authorized"]);
+export const APPROVAL_SOURCES = Object.freeze(["issue_stop", "pre_authorized", "auto_intake"]);
 export const MERGE_GUARD_MODES = Object.freeze([
   "unverified",
   "github_required_checks",
@@ -129,7 +129,17 @@ function asBoolean(value, fallback = false) {
   throw new Error(`Expected boolean, received ${String(value)}`);
 }
 
-function requireHumanActor(event, actor) {
+function requireHumanActor(event, actor, patch = {}) {
+  // Gate A 开单同轮自动放行的 actor 诚实性:auto_intake 的 actor 必须恰为
+  // "orchestrator"——人未敲审批命令,不得伪造 human:<身份> 留痕;出现任何
+  // human:<身份> 形式反而抛错。其余 HUMAN_EVENTS 与 pre_authorized 的
+  // human:<身份> 硬校验保持不变。
+  if (event === "approve_requirement" && patch?.approval_source === "auto_intake") {
+    if (actor !== "orchestrator") {
+      throw new Error('approve_requirement with approval_source "auto_intake" requires actor exactly "orchestrator"');
+    }
+    return;
+  }
   if (HUMAN_EVENTS.has(event) && !/^human:[A-Za-z0-9_.@-]+$/.test(actor ?? "")) {
     throw new Error(`${event} requires actor in human:<identity> form`);
   }
@@ -332,7 +342,7 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   const actor = payload.actor ?? "orchestrator";
   const evidence = String(payload.evidence ?? "").trim();
   if (!evidence) throw new Error("Every transition requires evidence");
-  requireHumanActor(event, actor);
+  requireHumanActor(event, actor, payload.patch);
   assertPatchFieldOwnership(event, payload.patch);
 
   if ((event === "approve_skip" || event === "policy_skip") && (item.delivery_required || !item.skip_allowed)) {
@@ -440,13 +450,13 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   if (event === "approve_requirement") {
     next.human_approval = "approved";
     next.next_action = "start_planning";
-    // Gate A 留痕:默认 issue_stop(Issue 评论人工批准);预授权必须落在
-    // 硬边界内——低/中风险且无规格同步要求(含 patch 前后都不得是规格工单,
-    // 不允许借预授权同轮豁免规格层),否则抛错、状态不变
+    // Gate A 留痕:默认 issue_stop(Issue 评论人工批准);同轮放行
+    // (pre_authorized/auto_intake)的硬边界收窄为风险一维——仅 high 拒绝,
+    // spec_sync_required 不再构成同轮放行边界,越界抛错、状态不变
     next.approval_source = payload.patch?.approval_source ?? "issue_stop";
-    if (next.approval_source === "pre_authorized"
-      && (!["low", "medium"].includes(item.risk_level) || item.spec_sync_required === true || next.spec_sync_required === true)) {
-      throw new Error("pre-authorized approval requires risk_level low/medium and spec_sync_required false; high-risk and spec-sync items must stop at Gate A for human approval");
+    if (["pre_authorized", "auto_intake"].includes(next.approval_source)
+      && !["low", "medium"].includes(item.risk_level)) {
+      throw new Error("same-turn approval (pre_authorized/auto_intake) requires risk_level low/medium; high-risk items must stop at Gate A for human approval");
     }
   } else if (event === "code_complete") {
     next.coder_result = "completed";

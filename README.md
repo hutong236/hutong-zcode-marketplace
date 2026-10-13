@@ -37,9 +37,12 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 
 ## 安全边界（hulane）
 
-- Gate A：需求批准后才允许写业务代码；用户需求原话已明确批准（如「直接做」「预授权」）
-  且工单低/中风险、无规格同步要求时，可同轮预授权（approval_source="pre_authorized"）
-  直达 ready，高风险与规格工单仍必须停等 `/hulane_approve`；
+- Gate A：开单同轮默认自动放行（approval_source="auto_intake"、actor=orchestrator，
+  evidence 引用用户本轮原话；用户原话含明确批准措辞如「直接做」「预授权」时走
+  pre_authorized、actor=human:<身份>），审批包（含 spec delta 全文）先发 Issue 评论
+  留痕、不阻断；停等白名单收窄为三种——①risk_level=high（状态机强制）
+  ②Planner 报告需求歧义/scope_questions 未闭合 ③用户显式暂停——三种情形停等
+  `/hulane_approve`（人工覆盖通道），spec_sync_required=true 不再构成停等理由；
 - Gate B：高风险 PR 必须人工批准合并；
 - Gate C：出镜像的条目合并后必须人工确认 Tag/镜像交付;默认 skip 策略
   (`delivery_required: false` + `skip_allowed: true`)在 Gate A 批准时已确认,
