@@ -8,10 +8,13 @@
 | --- | --- | --- |
 | `hulane` | 3.8.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
+| `token-speed` | 0.1.0 | 会话 Token 输出速度(t/s)与用量统计：`/tps` 命令 + `token_speed` MCP 工具 |
 
 `hulane` 组件：9 个 `/hulane_*` 命令、14 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
+
+`token-speed` 组件：1 个 `/tps` 命令、1 个 `token_speed` MCP 工具（零依赖 stdio 服务器）、CLI 直查脚本。数据只读解析 `~/.zcode/cli/rollout/` 的会话模型请求记录（tok/s = 输出 tokens ÷ 请求总时长，含首 token 等待，为流式速度下界），不写文件、不联网。版本独立演进，不参与 `npm run sync-version`。
 
 可选伴侣插件：后端 Go 工单在生成/修改 Go 代码前由 `hulane-coder` 调用 `modern-go-guidelines` 插件的 `use-modern-go` 技能（市场 `goland-claude-marketplace`），按目标 Go 版本应用现代惯用法；未安装时流程会提示安装，并按仓库后端规范降级继续。
 
@@ -31,7 +34,7 @@ hutong236/hutong-zcode-marketplace
 git@github.com:hutong236/hutong-zcode-marketplace.git
 ```
 
-添加后在「个人」分类下找到 `hulane`、`invoice-expense-report` 插件按需安装。
+添加后在「个人」分类下找到 `hulane`、`invoice-expense-report`、`token-speed` 插件按需安装。
 
 完整步骤见 [INSTALL.md](INSTALL.md)。
 

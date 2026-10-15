@@ -1,0 +1,21 @@
+{
+  "name": "token-speed",
+  "version": "0.1.0",
+  "description": "查看 ZCode 会话的 Token 输出速度(t/s)与用量统计:/tps 命令或 token_speed MCP 工具,数据只读自本地会话请求记录。",
+  "author": {
+    "name": "hutong236",
+    "url": "https://github.com/hutong236"
+  },
+  "homepage": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "repository": "https://github.com/hutong236/hutong-zcode-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "token",
+    "speed",
+    "tps",
+    "usage",
+    "metrics"
+  ],
+  "commands": "commands",
+  "mcpServers": ".mcp.json"
+}

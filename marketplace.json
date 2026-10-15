@@ -35,6 +35,26 @@
         "pdf",
         "excel"
       ]
+    },
+    {
+      "name": "token-speed",
+      "source": "./token-speed",
+      "description": "查看 ZCode 会话的 Token 输出速度(t/s)与用量统计:/tps 命令或 token_speed MCP 工具,数据只读自本地会话请求记录。",
+      "version": "0.1.0",
+      "category": "utilities",
+      "displayName": "Token Speed",
+      "displayName_i18n": {
+        "zh-CN": "Token 速度监控"
+      },
+      "description_i18n": {
+        "zh-CN": "在 ZCode 里查看会话的 Token 输出速度(tok/s)与用量统计:最近一次速度、会话平均/中位/峰值、输入输出合计与 cache 命中率。数据只读解析本地会话请求记录,不联网、不写文件。"
+      },
+      "tags": [
+        "token",
+        "speed",
+        "usage",
+        "metrics"
+      ]
     }
   ]
 }
