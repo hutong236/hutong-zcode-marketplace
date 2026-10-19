@@ -6,7 +6,7 @@
 
 | 插件 | 版本 | 说明 |
 | --- | --- | --- |
-| `hulane` | 3.8.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
+| `hulane` | 3.9.0 | MCP 控制面、GitHub 事实源、隔离执行与可验证供应链闭环 |
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 | `token-speed` | 0.1.0 | 会话 Token 输出速度(t/s)与用量统计：`/tps` 命令 + `token_speed` MCP 工具 |
 
