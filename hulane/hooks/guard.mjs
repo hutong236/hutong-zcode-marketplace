@@ -6,15 +6,18 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { consumeAuthorization, consumeReleaseAuthorization, verifyStateAuthorization } from "../scripts/lib/authorization.mjs";
 import { findControlRoot, resolveControlDir, storePath } from "../scripts/lib/state-store.mjs";
+import { evaluateDisciplineBash } from "../scripts/lib/discipline.mjs";
 
-function shellSegments(command) {
+// shellSegments 与 stripMessageBodies 同时被执行纪律守卫
+// (scripts/lib/discipline.mjs)复用,故导出;函数体保持不变
+export function shellSegments(command) {
   return String(command ?? "").split(/(?:\r?\n|&&|\|\||;)/).map((value) => value.trim()).filter(Boolean);
 }
 
 // git 命令的 -m/-am/--message 消息体是数据不是命令：提交信息里的 "push"/"tag" 字样
 // 会与同段的 git 误判成受控操作，分段扫描前先剥离。含命令替换（$(、反引号）的消息体
 // 保留扫描（fail closed），仅整体为 $(cat <<EOF ...) 纯数据形式时剥离。
-function stripMessageBodies(command) {
+export function stripMessageBodies(command) {
   return String(command ?? "").replace(
     /(^|\s)(?:-am|-m|--message)(?:\s*=|\s+)(?:"((?:[^"\\]|\\.)*)"|'((?:[^']|'')*)'|(\S+))/g,
     (match, prefix, doubleQuoted, singleQuoted, token) => {
@@ -205,6 +208,13 @@ async function main() {
   for await (const chunk of process.stdin) chunks.push(chunk);
   const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
   const command = input.tool_input?.command ?? input.tool_input?.cmd ?? "";
+  // 执行纪律守卫前置(REQ-9):纪律 deny 优先于一切特权守卫逻辑(含白名单
+  // 远端与令牌授权);纪律放行/不适用则原 evaluateCommand 流程逐行不变
+  const discipline = evaluateDisciplineBash({ cwd: input.cwd ?? process.cwd(), command });
+  if (!discipline.allowed) {
+    process.stdout.write(`${JSON.stringify(hookResult("deny", discipline.reason))}\n`);
+    return;
+  }
   const token = String(command).match(/(?:^|\s)HULANE_AUTH_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];
   const releaseTagToken = String(command).match(/(?:^|\s)HULANE_RELEASE_TAG_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];
   const releasePushToken = String(command).match(/(?:^|\s)HULANE_RELEASE_PUSH_TOKEN=([0-9a-f]{64})(?:\s|$)/)?.[1];

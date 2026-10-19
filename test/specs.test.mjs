@@ -147,7 +147,7 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(capabilities, ["hulane-release-workflow", "hulane-spec-layer"]);
+  assert.deepEqual(capabilities, ["hulane-execution-discipline", "hulane-release-workflow", "hulane-spec-layer"]);
   const requirementCounts = {};
   for (const capability of capabilities) {
     const spec = validateSpecFile(
@@ -161,6 +161,7 @@ test("dogfood specs in this repository pass their own validator", () => {
     requirementCounts[capability] = spec.requirements.length;
   }
   assert.equal(requirementCounts["hulane-release-workflow"], 6);
+  assert.equal(requirementCounts["hulane-execution-discipline"], 5);
 
   // 扫描全部决策史归档 delta:新增归档自动纳入校验
   const archiveRoot = path.join(repositoryRoot, "openspec", "changes", "archive");
@@ -168,9 +169,9 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5", "REQ-7"]);
+  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
   // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组
-  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"] };
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
@@ -188,5 +189,17 @@ test("dogfood specs in this repository pass their own validator", () => {
     "预授权硬边界（状态机强制）",
     "approval_source 留痕与写入通道收口",
     "delta 全文进 Gate A 审批包",
+  ]);
+  // REQ-9 的 delta 是执行纪律守卫新能力:五个 ADDED 需求
+  const req9 = validateSpecFile(
+    `openspec/changes/archive/REQ-9/${DELTA_SPEC_FILE}`,
+    fs.readFileSync(path.join(archiveRoot, "REQ-9", DELTA_SPEC_FILE), "utf8"),
+  );
+  assert.deepEqual(req9.groups.flatMap((group) => group.requirements), [
+    "git 钩子绕过拦截",
+    "lint/formatter 配置保护",
+    "提交内容卫生检查",
+    "全局生效、逃生口与 fail-closed",
+    "接线方式与既有守卫不变",
   ]);
 });
