@@ -3,6 +3,30 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- 执行纪律守卫（REQ-9，检测面移植自 affaan-m/ECC，MIT，轻量重写）：在编码行为
+  那一刻全局强制三类纪律检查，不依赖 hulane 管理状态。①Bash 侧（guard.mjs
+  进程内前置，纪律 deny 优先于白名单远端与令牌授权）：受保护 git 子命令
+  （commit/push/merge/cherry-pick/rebase/am）的钩子绕过拦截——`--no-verify`
+  及 `--no-v` 起无歧义前缀、commit `-n` 短旗标簇分析（`-an` 拦、`-mn` 不拦）、
+  `-c`/`--config-env` 的 hook-redirect 覆盖、`git config` 持久写入
+  `core.hooksPath`/`include.path`/`includeIf.*.path`、同命令行 `GIT_CONFIG_*`
+  注入；`git commit`（`--amend` 除外）时暂存区卫生检查——密钥形状（占位符
+  豁免）、debugger、console.log 命中即 deny（reason 含文件:行号）。②Edit/Write
+  侧（hooks.json 新增 `Edit|Write` matcher 挂 discipline.mjs 薄入口）：修改
+  磁盘已存在的 lint/formatter 配置（ESLint/Prettier/Biome/Ruff/Stylelint/
+  markdownlint 全家族 + 两条通配，大小写不敏感）被拒——应修代码而非弱化检查
+  配置；首创放行；构建/测试配置不在保护面。**行为收紧提示**：console.log
+  与密钥/debugger 同权全 deny（ZCode 协议无 warning 通道），暂存内容不干净
+  的 commit 会被拦；逃生口 `HULANE_DISCIPLINE_DISABLE`（逗号分隔子集
+  `git-bypass,config-protection,commit-quality`）仅认 hook 进程环境，命令
+  内联同名赋值不可自禁。主流程异常 fail-closed deny。已知 v2 缺口（heredoc/
+  管道/sed 生成、`env -S` 传播、Bash 重定向改写配置、`--amend` 夹带）见
+  `openspec/changes/archive/REQ-9/decisions.md`。
+
 ## [3.8.0] - 2026-10-14
 
 ### Added

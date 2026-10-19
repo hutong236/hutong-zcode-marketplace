@@ -38,6 +38,44 @@ Each Work Item runs in `.hulane/worktrees/<ID>`. Automatic implementation
 rework is limited to three rounds. A state-aware hook requires a short-lived,
 single-use authorization for `git push`, tag mutation, PR merge, and Issue close.
 
+Execution discipline guard (V3.8.x, REQ-9): on top of the delivery guard, three
+discipline checks run at the moment code is written, globally (they do not
+depend on hulane-managed repository state). The detection surface is ported
+from affaan-m/ECC (MIT), lightly rewritten.
+
+- Bash PreToolUse (in-process in `hooks/guard.mjs`, discipline deny outranks
+  allowlists and token authorizations): ① git hook-bypass interception for
+  `commit/push/merge/cherry-pick/rebase/am` — `--no-verify` and its unambiguous
+  `--no-v`… prefixes, commit's `-n` short flag via cluster analysis (`-an`
+  denied, `-mn` not), `-c`/`--config-env` hook-redirect overrides
+  (`core.hooksPath`, `include.path`, `includeIf.*.path`), persistent
+  `git config <key> <value>` writes of those keys, and same-command-line
+  `GIT_CONFIG_*` injection; ② staged-content hygiene on `git commit` (skipped
+  for `--amend`) — reads the index (`git show :<path>`), flags secret shapes
+  (placeholder-exempted), `debugger`, and `console.log` with file:line reasons.
+- Edit/Write PreToolUse (`hooks/discipline.mjs`): modifying an existing
+  linter/formatter config file is denied — fix the code instead of weakening
+  the check config. First-time creation is allowed; build/test configs
+  (`tsconfig.json`, `jest.config.js`, `vite.config.ts`, `pyproject.toml`, …)
+  are never in scope.
+
+Escape hatch: set `HULANE_DISCIPLINE_DISABLE` (comma-separated subset of
+`git-bypass,config-protection,commit-quality`) in the hook process
+environment — the session-level environment, never the inspected command
+text (an inline assignment cannot disable the guard). Discipline failures
+fail closed (deny).
+
+Known v2 gaps (documented acceptance): the lightweight rewrite does not port
+ECC's full shell semantic parser, so heredoc-, pipeline-, sed-generated, and
+`env -S` propagated bypass shapes are out of scope; wrapper flags before git
+(`env -i git commit --no-verify`, `env -u FOO git push --no-verify`) and
+nested shells (`sh -c "git commit --no-verify"`) are verified false negatives
+— the head-of-segment walk stops at the wrapper's own flag tokens and never
+reaches git; `--amend` may smuggle newly staged content past the hygiene scan;
+Bash-side redirections that overwrite a protected lint config
+(`echo x > .eslintrc.js`) are not caught in v1.
+See `openspec/changes/archive/REQ-9/decisions.md`.
+
 Native capability specs (V3.6.0): behavior baselines live at
 `openspec/specs/<capability>/spec.md`; the Planner drafts an
 ADDED/MODIFIED/REMOVED/RENAMED delta into the Gate A package, Coder merges the

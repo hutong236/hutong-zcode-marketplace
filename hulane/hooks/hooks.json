@@ -25,6 +25,17 @@
             "timeoutMs": 5000
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": ["${ZCODE_PLUGIN_ROOT}/hooks/discipline.mjs"],
+            "timeoutMs": 5000
+          }
+        ]
       }
     ],
     "Stop": [
