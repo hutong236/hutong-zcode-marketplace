@@ -68,6 +68,8 @@ const PATCH_FIELDS = new Set([
   "image",
   "image_digest",
   "image_tag",
+  "issue_number",
+  "issue_pending",
   "issue_state",
   "merged_sha",
   "next_action",
@@ -102,6 +104,10 @@ const SPEC_EVIDENCE_FIELDS = new Set(["specs_synced", "specs_commit_sha", "spec_
 // Gate A 留痕字段同样收口:approval_source 只允许由 approve_requirement 写入,
 // 其余事件携带即抛错,防止事后伪造预授权来源
 const APPROVAL_TRACE_FIELDS = new Set(["approval_source"]);
+// Issue 回填字段收口:issue_number/issue_pending 只允许由 issue_created 自环事件
+// (hulane_flush 在线窗口应用)写入——否则任意事件带 patch 就能把 pending 工单
+// 伪造绑定到一个从未建过的 GitHub Issue
+const ISSUE_BACKFILL_FIELDS = new Set(["issue_number", "issue_pending"]);
 
 function assertPatchFieldOwnership(event, patch = {}) {
   for (const key of Object.keys(patch)) {
@@ -113,6 +119,9 @@ function assertPatchFieldOwnership(event, patch = {}) {
     }
     if (APPROVAL_TRACE_FIELDS.has(key) && event !== "approve_requirement") {
       throw new Error(`Unsupported state patch field: ${key} (only approve_requirement may set it)`);
+    }
+    if (ISSUE_BACKFILL_FIELDS.has(key) && event !== "issue_created") {
+      throw new Error(`Unsupported state patch field: ${key} (only the issue_created event may set it)`);
     }
   }
 }
@@ -204,7 +213,21 @@ export function normalizeWorkItem(item) {
   // V3.7.0 前立项的存量工单没有 Gate A 来源字段:祖父回填 issue_stop,
   // 既有流转不受影响(参照规格层字段的存量豁免方式)
   if (!("approval_source" in next)) next.approval_source = "issue_stop";
+  // V3.9.0 前立项的存量工单都是在线开单(Issue 先建):祖父回填 issue_pending=false,
+  // REQ-3/5/7/9 等既有工单行为逐字节不变
+  if (!("issue_pending" in next)) next.issue_pending = false;
   return next;
+}
+
+// 本地优先开单的编号分配:store 内全部工单(REQ 与 BUG 前缀合并)数字最大值 + 1。
+// 前缀由 type 决定,与 GitHub Issue 编号完全解耦(flush 后 issue_number 另行回填)
+export function nextLocalWorkItemNumber(store) {
+  let max = 0;
+  for (const id of Object.keys(store?.items ?? {})) {
+    const match = String(id).match(ID_PATTERN);
+    if (match) max = Math.max(max, Number(match[2]));
+  }
+  return max + 1;
 }
 
 // 纯输入校验，不依赖 GitHub Issue：open_work_item 必须在建 Issue 之前调用。
@@ -234,16 +257,28 @@ export function createWorkItem(input, now = () => new Date()) {
   const checked = validateWorkItemInput(input);
   const idMatch = String(input.id ?? "").match(ID_PATTERN);
   if (!idMatch) throw new Error("Work Item id must match REQ-<issue> or BUG-<issue>");
-  const issueNumber = Number(input.issue_number);
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error("issue_number must be a positive integer");
-  if (Number(idMatch[2]) !== issueNumber) throw new Error("Work Item id number must equal issue_number");
+  // 本地优先开单(issue_pending=true):GitHub Issue 尚未创建,issue_number 必为
+  // null,编号由 store 本地自增分配,flush 在线窗口经 issue_created 事件回填。
+  // 在线先建 Issue 的旧通道(CLI 兼容)仍要求 id 数字 == issue_number。
+  const issuePending = input.issue_pending === true;
+  let issueNumber = null;
+  if (!issuePending) {
+    issueNumber = Number(input.issue_number);
+    if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error("issue_number must be a positive integer");
+    if (Number(idMatch[2]) !== issueNumber) throw new Error("Work Item id number must equal issue_number");
+  } else if (input.issue_number !== undefined && input.issue_number !== null) {
+    throw new Error("issue_pending Work Items must be created without an issue_number");
+  }
   const { size, deliveryRequired, skipAllowed, specSyncRequired } = checked;
 
   const timestamp = nowIso(now);
   const item = {
     schema_version: 2,
     id: input.id,
+    issue_pending: issuePending,
     issue_number: issueNumber,
+    planner_summary: String(input.planner_summary ?? "").trim() || null,
+    acceptance_criteria: Array.isArray(input.acceptance_criteria) ? input.acceptance_criteria.map(String) : [],
     github_issue_url: input.github_issue_url ?? null,
     title: String(input.title ?? "").trim(),
     type: idMatch[1] === "BUG" ? "bug" : (input.type ?? "feature"),
@@ -304,7 +339,9 @@ export function createWorkItem(input, now = () => new Date()) {
       from: null,
       to: "waiting_approval",
       actor: input.actor ?? "orchestrator",
-      evidence: input.evidence ?? `GitHub Issue #${issueNumber} created`,
+      evidence: input.evidence ?? (issuePending
+        ? `Local Work Item ${input.id} created offline; GitHub Issue pending flush`
+        : `GitHub Issue #${issueNumber} created`),
       at: timestamp,
     }],
   };
@@ -330,6 +367,12 @@ function targetFor(item, event, payload) {
     // Gate B 只由高风险触发;控制面守卫的低/中风险依赖已核验的补偿控制
     // (全部上报检查成功 + 精确 Head SHA + --match-head-commit)自动合并
     return item.risk_level === "high" ? "waiting_human_merge" : "merging";
+  }
+  // issue_created 是任意状态上的自环(仿 specs_synced 模式):只对 pending 工单
+  // 生效,不改状态,记录 GitHub Issue 补建回填的留痕
+  if (event === "issue_created") {
+    if (item.issue_pending !== true) throw new Error("issue_created applies only to issue_pending Work Items");
+    return item.status;
   }
   const target = STATIC_TRANSITIONS[item.status]?.[event];
   if (!target) throw new Error(`Invalid transition: ${item.status} --${event}--> ?`);
@@ -359,6 +402,10 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
     throw new Error("Reviewer approval requires tester_result=passed");
   }
   if (event === "pr_created") {
+    // PR 必须挂在真实存在的 GitHub Issue 上:pending 工单(尚未 flush)先补建 Issue
+    if (item.issue_pending === true) {
+      throw new Error("pr_created requires the GitHub Issue to exist; run hulane_flush first");
+    }
     const prNumber = payload.patch?.pr_number;
     if (!Number.isInteger(prNumber) || prNumber <= 0) throw new Error("pr_created requires a positive pr_number");
     if (!/^https:\/\/github\.com\//.test(String(payload.patch?.github_pr_url ?? ""))) throw new Error("pr_created requires github_pr_url");
@@ -420,6 +467,20 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
       throw new Error("specs_synced requires specs_commit_sha to equal the recorded merged_sha");
     }
     if (!String(payload.patch?.spec_delta_dir ?? "").trim()) throw new Error("specs_synced requires spec_delta_dir");
+  }
+  if (event === "issue_created") {
+    // flush 回填证据:正整数 issue_number + github.com Issue URL
+    if (item.issue_pending !== true) throw new Error("issue_created applies only to issue_pending Work Items");
+    const createdNumber = payload.patch?.issue_number;
+    if (!Number.isInteger(createdNumber) || createdNumber <= 0) {
+      throw new Error("issue_created requires a positive issue_number");
+    }
+    if (!/^https:\/\/github\.com\//.test(String(payload.patch?.github_issue_url ?? ""))) {
+      throw new Error("issue_created requires a github.com Issue URL");
+    }
+  }
+  if (event === "issue_closed" && item.issue_pending === true) {
+    throw new Error("issue_closed requires the GitHub Issue to exist; run hulane_flush first");
   }
   if (event === "issue_closed" && item.spec_sync_required && item.specs_synced !== true) {
     throw new Error("issue_closed requires recorded specs_synced evidence while spec_sync_required");
@@ -520,6 +581,10 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   } else if (event === "specs_synced") {
     next.specs_synced = true;
     next.next_action = "close_issue";
+  } else if (event === "issue_created") {
+    // 自环回填:issue_number/github_issue_url 经 patch 写入,这里只翻转 pending 标志;
+    // 状态与 next_action 保持不变,history 留痕
+    next.issue_pending = false;
   } else if (event === "issue_closed") {
     next.issue_state = "closed";
     next.next_action = "none";
@@ -549,8 +614,18 @@ export function validateWorkItem(item) {
   const errors = [];
   const idMatch = String(item.id ?? "").match(ID_PATTERN);
   if (!idMatch) errors.push("invalid id");
-  if (!Number.isInteger(item.issue_number) || item.issue_number <= 0) errors.push("invalid issue_number");
-  if (idMatch && Number(idMatch[2]) !== item.issue_number) errors.push("id/issue mismatch");
+  if (typeof item.issue_pending !== "boolean") errors.push("invalid issue_pending");
+  // pending 不变量:Issue 未建 ⇒ issue_number/github_issue_url 必为 null、Issue 必为 open;
+  // 非 pending(已 flush 或在线开单)⇒ issue_number 必为正整数。本地优先编号后
+  // id 数字与 issue_number 解耦(REQ-10 可回填为 Issue #77),旧的 id/issue 相等
+  // 不变量随之退役;存量在线开单工单两数本就相等,行为不变
+  if (item.issue_pending === true) {
+    if (item.issue_number !== null) errors.push("issue_pending requires a null issue_number");
+    if (item.github_issue_url !== null) errors.push("issue_pending requires a null github_issue_url");
+    if (item.issue_state !== "open") errors.push("issue_pending requires an open Issue state");
+  } else if (item.issue_pending === false && (!Number.isInteger(item.issue_number) || item.issue_number <= 0)) {
+    errors.push("invalid issue_number");
+  }
   if (!STATES.includes(item.status)) errors.push("invalid status");
   if (!RISKS.includes(item.risk_level)) errors.push("invalid risk_level");
   if (!SIZES.includes(item.size)) errors.push("invalid size");
@@ -582,6 +657,7 @@ export function validateWorkItem(item) {
   if (!Number.isInteger(item.rework_count) || item.rework_count < 0) errors.push("invalid rework_count");
   if (item.rework_count > item.rework_limit + 1) errors.push("rework_count exceeds terminal allowance");
   if (item.status === "done") {
+    if (item.issue_pending === true) errors.push("done requires the flushed GitHub Issue");
     if (item.issue_state !== "closed") errors.push("done requires closed Issue");
     if (item.human_approval !== "approved") errors.push("done requires requirement approval");
     if (item.tester_result !== "passed") errors.push("done requires passed tests");

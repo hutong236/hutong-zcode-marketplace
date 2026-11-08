@@ -14,6 +14,7 @@ function frontmatter(item) {
     ["status", item.status], ["risk_level", item.risk_level], ["delivery_required", item.delivery_required],
     ["delivery_reason", item.delivery_reason], ["skip_allowed", item.skip_allowed], ["human_approval", item.human_approval],
     ["approval_source", item.approval_source],
+    ["issue_pending", item.issue_pending],
     ["github_issue", item.issue_number], ["github_issue_url", item.github_issue_url], ["github_pr", item.pr_number],
     ["github_pr_url", item.github_pr_url], ["branch", item.branch], ["worktree_path", item.worktree_path],
     ["agent_owner", item.agent_owner], ["coder_result", item.coder_result], ["tester_result", item.tester_result],
@@ -34,7 +35,14 @@ function frontmatter(item) {
 
 function initialBody(item, { plannerSummary = "", acceptanceCriteria = [] } = {}) {
   const criteria = acceptanceCriteria.length ? acceptanceCriteria.map((value) => `- [ ] ${value}`).join("\n") : "- [ ] 待补充";
-  return `# ${item.id} ${item.title}\n\n## 背景\n来自 GitHub Issue #${item.issue_number}。\n\n## 目标\n${item.title}\n\n## 功能范围\n- [ ] 按已批准范围实施\n\n## 非范围\n未经批准的范围变更。\n\n## 验收标准\n${criteria}\n\n## Planner 摘要\n${plannerSummary || "待补充"}\n\n## 规格关联\n- capability：\n- delta：\n- specs_commit_sha：\n- sync 状态：\n\n## GitHub\n- Issue：${item.github_issue_url ?? `#${item.issue_number}`}\n- PR：\n- 分支：\n- 构建运行：\n\n## 关联\n\n## Agent 执行记录\n`;
+  // pending 工单的 Issue 引用显示「Issue 待补建(flush)」,提示先跑在线补建窗口
+  const issueReference = item.issue_pending === true
+    ? "Issue 待补建（flush）"
+    : (item.github_issue_url ?? `#${item.issue_number}`);
+  const background = item.issue_pending === true
+    ? `本地优先开单（issue_pending=true），GitHub Issue 待 hulane_flush 在线窗口补建。`
+    : `来自 GitHub Issue #${item.issue_number}。`;
+  return `# ${item.id} ${item.title}\n\n## 背景\n${background}\n\n## 目标\n${item.title}\n\n## 功能范围\n- [ ] 按已批准范围实施\n\n## 非范围\n未经批准的范围变更。\n\n## 验收标准\n${criteria}\n\n## Planner 摘要\n${plannerSummary || "待补充"}\n\n## 规格关联\n- capability：\n- delta：\n- specs_commit_sha：\n- sync 状态：\n\n## GitHub\n- Issue：${issueReference}\n- PR：\n- 分支：\n- 构建运行：\n\n## 关联\n\n## Agent 执行记录\n`;
 }
 
 export function projectionPath(root, item) {

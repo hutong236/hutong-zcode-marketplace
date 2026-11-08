@@ -516,3 +516,50 @@ test("release tokens expire past their TTL and work-item tokens never pass as re
     /Authorization is for release-tag/,
   );
 });
+
+// REQ-11:pending 工单(Issue 未补建)不允许关单/合并——目标对象尚不存在,
+// 必须先经 hulane_flush 在线窗口补建回填;token 路径与状态自证路径共用断言
+test("issue close and pr merge refuse issue_pending items until flush", () => {
+  const githubGuard = {
+    reviewer_result: "approved",
+    pr_checks: "passed",
+    pr_check_name: "Hulane PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
+    pr_head_sha: sha,
+    merge_guard_mode: "control_plane_verified",
+    required_checks_enforced: false,
+    pr_number: 42,
+  };
+  const closeRepo = repositoryWithItem("waiting_close", {
+    issue_pending: true,
+    issue_number: null,
+    github_issue_url: null,
+    ...specSynced,
+  });
+  assert.throws(() => issueAuthorization(closeRepo.root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock), /run hulane_flush first/);
+
+  const mergeRepo = repositoryWithItem("merging", {
+    issue_pending: true,
+    issue_number: null,
+    github_issue_url: null,
+    ...githubGuard,
+  });
+  assert.throws(() => issueAuthorization(mergeRepo.root, {
+    id: "REQ-25",
+    action: "pr-merge",
+    actor: "orchestrator",
+  }, clock), /run hulane_flush first/);
+
+  // 回填后(flush 完成)同一工单恢复可授权
+  const flushed = repositoryWithItem("waiting_close", specSynced);
+  const authorization = issueAuthorization(flushed.root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.equal(authorization.work_item, "REQ-25");
+});

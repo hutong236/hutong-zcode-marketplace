@@ -6,9 +6,12 @@ import path from "node:path";
 import { applyEvent, createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
 import {
   assertRevisionCanSync,
+  createIssue,
+  findIssueByTitlePrefix,
   hydrateItemFromGitHub,
   parseGitHubState,
   readGithubMeta,
+  renameIssueTitle,
   serializeGitHubState,
   stateLabel,
   syncItemToGitHub,
@@ -213,4 +216,49 @@ test("hydrate records the managed comment id for later fast syncs", () => {
   assert.equal(hydrated.id, item.id);
   assert.equal(hydrated.issue_state, "open");
   assert.deepEqual(readGithubMeta(root)[item.id], { comment_id: 555, state_label: "hulane:waiting-approval" });
+});
+
+// REQ-11:pending 工单的 sync 统一降级——远端尚无 Issue,返回 skipped 而非抛错
+test("sync degrades to skipped for issue_pending items without touching gh", () => {
+  const root = temporaryRoot();
+  const item = createWorkItem({
+    id: "REQ-26",
+    issue_pending: true,
+    title: "Offline pending",
+    risk_level: "low",
+    delivery_required: false,
+    delivery_reason: "batched release",
+    skip_allowed: true,
+  });
+  const { calls, run } = fakeRun([]); // 任何 gh 调用都会抛错:短路必须零调用
+  const result = syncItemToGitHub(item, { repository: "org/pending", cwd: root, run });
+  assert.deepEqual(result, { skipped: "issue_pending", id: "REQ-26", issue_number: null, label: null, revision: item.revision });
+  assert.equal(calls.length, 0);
+  // 状态注释往返携带 pending 身份,hydrate 后不变量保持
+  const roundTripped = parseGitHubState(serializeGitHubState(item));
+  assert.equal(roundTripped.issue_pending, true);
+  assert.equal(roundTripped.issue_number, null);
+});
+
+test("flush helpers precheck by title prefix, create, and rename idempotently", () => {
+  const root = temporaryRoot();
+  const { calls, run } = fakeRun([
+    (args) => (args[0] === "issue" && args[1] === "list" ? JSON.stringify([
+      { number: 5, title: "Stale mention of REQ-26 in body only", url: "https://github.com/org/pending/issues/5" },
+      { number: 7, title: "REQ-26 Offline pending", url: "https://github.com/org/pending/issues/7" },
+    ]) : undefined),
+    (args) => (args[0] === "issue" && args[1] === "create" ? "https://github.com/org/pending/issues/9?x=1" : undefined),
+    (args) => (args[0] === "issue" && args[1] === "edit" ? "" : undefined),
+  ]);
+  // 预查:只认 `<ID> ` 前缀(或恰好等于 ID),正文命中的 #5 不算
+  const hit = findIssueByTitlePrefix({ repository: "org/pending", workItemId: "REQ-26", cwd: root, run });
+  assert.deepEqual(hit, { number: 7, url: "https://github.com/org/pending/issues/7", title: "REQ-26 Offline pending" });
+  // 未命中 → 补建,URL 带 query 也能解析编号
+  const miss = findIssueByTitlePrefix({ repository: "org/pending", workItemId: "REQ-27", cwd: root, run });
+  assert.equal(miss, null);
+  const created = createIssue({ repository: "org/pending", title: "REQ-27 Next", body: "body", cwd: root, run });
+  assert.deepEqual(created, { number: 9, url: "https://github.com/org/pending/issues/9?x=1" });
+  // 复用路径标题落位
+  renameIssueTitle({ repository: "org/pending", issueNumber: 7, title: "REQ-26 Offline pending", cwd: root, run });
+  assert.ok(calls.some((args) => args[0] === "issue" && args[1] === "edit" && args.includes("7") && args.includes("REQ-26 Offline pending")));
 });

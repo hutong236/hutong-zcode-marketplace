@@ -169,6 +169,11 @@ function syncFullPath(item, { repository, cwd, run }) {
 
 export function syncItemToGitHub(item, { repository, cwd = process.cwd(), run = runGh } = {}) {
   validateWorkItem(item);
+  // sync 降级:pending 工单的 GitHub Issue 尚未创建,返回 skipped 而非抛错,
+  // 让全部控制面调用方(persist/hulane_sync/CLI)在网络不可达时照常离线流转
+  if (item.issue_pending === true) {
+    return { skipped: "issue_pending", id: item.id, issue_number: null, label: null, revision: item.revision };
+  }
   const meta = readGithubMeta(cwd)[item.id] ?? null;
   if (meta?.comment_id) {
     try {
@@ -178,4 +183,32 @@ export function syncItemToGitHub(item, { repository, cwd = process.cwd(), run = 
     }
   }
   return syncFullPath(item, { repository, cwd, run });
+}
+
+// flush 幂等预查:按 `<ID> ` 前缀标题搜既有 Issue(含已关闭),命中即复用,
+// 不重复补建——覆盖「flush 中途断线,Issue 已建但本地回填未落」的恢复路径
+export function findIssueByTitlePrefix({ repository, workItemId, cwd = process.cwd(), run = runGh }) {
+  const raw = run([
+    "issue", "list", "--repo", repository, "--search", `${workItemId} in:title`,
+    "--state", "all", "--limit", "20", "--json", "number,title,url",
+  ], { cwd });
+  const issues = JSON.parse(raw || "[]");
+  const hit = (Array.isArray(issues) ? issues : []).find((issue) => {
+    const title = String(issue.title ?? "");
+    return title === workItemId || title.startsWith(`${workItemId} `);
+  });
+  return hit ? { number: Number(hit.number), url: String(hit.url ?? ""), title: String(hit.title ?? "") } : null;
+}
+
+// flush 补建:gh issue create 并从返回 URL 解析正整数 Issue 编号
+export function createIssue({ repository, title, body, cwd = process.cwd(), run = runGh }) {
+  const url = run(["issue", "create", "--repo", repository, "--title", title, "--body", body], { cwd });
+  const number = Number(String(url).match(/\/issues\/(\d+)(?:\?.*)?$/)?.[1]);
+  if (!Number.isInteger(number) || number <= 0) throw new Error(`Could not parse Issue number from: ${url}`);
+  return { number, url: String(url).trim() };
+}
+
+// flush 标题落位:把(复用路径的)既有 Issue 标题改为 `<ID> <title>` 规范形
+export function renameIssueTitle({ repository, issueNumber, title, cwd = process.cwd(), run = runGh }) {
+  run(["issue", "edit", String(issueNumber), "--repo", repository, "--title", title], { cwd });
 }

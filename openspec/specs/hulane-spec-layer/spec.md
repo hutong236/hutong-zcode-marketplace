@@ -22,7 +22,7 @@
 
 ### Requirement: delta 全文进 Gate A 审批包
 
-spec_sync_required 工单 SHALL 把 delta 全文作为一条 GitHub Issue 评论随需求与方案一并进 Gate A 审批包；delta 过长时允许摘要加仓库内路径。Gate A 同轮自动放行 SHALL 不豁免该评论：评论 SHALL 在同轮放行应用前（或同轮内）发布，作为自动放行的审计留痕。
+spec_sync_required 工单 SHALL 把 delta 全文作为一条 GitHub Issue 评论随需求与方案一并进 Gate A 审批包；delta 过长时允许摘要加仓库内路径。Gate A 同轮自动放行 SHALL 不豁免该评论：评论 SHALL 在同轮放行应用前（或同轮内）发布，作为自动放行的审计留痕。离线开单（REQ-11：工单以 issue_pending=true 本地创建、GitHub Issue 尚未补建）时该评论发布义务 SHALL 展期至 flush 在线窗口：评论 SHALL 在 hulane_flush 补建 Issue 后、issue_closed 前发布；在线开单行为不变。
 
 #### Scenario: Gate A 审批包包含 delta
 
@@ -33,6 +33,11 @@ spec_sync_required 工单 SHALL 把 delta 全文作为一条 GitHub Issue 评论
 
 - WHEN 工单落在白名单停等情形等待 /hulane_approve
 - THEN delta 评论已在 waiting_approval 期间发布，人工一次批准需求、方案与规格变更的语义不变
+
+#### Scenario: 离线开单评论展期至 flush 窗口
+
+- WHEN spec_sync_required 工单离线开单（issue_pending=true）且 GitHub 暂不可达
+- THEN delta 评论义务展期至 hulane_flush 在线窗口，在 Issue 补建后、issue_closed 前发布；在线开单的既有评论时序不变
 
 ### Requirement: 主规格智能合并随实现 PR 提交
 

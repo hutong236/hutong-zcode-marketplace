@@ -42,9 +42,10 @@ flowchart TD
   CL["检查仓库、分类请求"] --> SZ{"intake 分级"}
   SZ -->|"小需求：纯前端或文档改动、<br>预计只动少量文件、不碰 schema/API/<br>鉴权/数据链路、风险低"| SM["跳过规划子代理：<br>主 Agent 内联撰写规划摘要、风险、<br>发版策略、验收标准，记 size=small"]
   SZ -->|"其余：standard"| PLN["只读派发 hulane-planner"]
-  SM --> OWI["hulane_open_work_item：<br>先建 GitHub Issue → 派生 REQ/BUG 编号<br>→ 落状态与投影，写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）<br>与规格策略（standard 默认 spec_sync_required=true）"]
+  SM --> OWI["hulane_open_work_item（本地优先，零 gh 调用）：<br>REQ/BUG 编号取 store 内全部工单数字最大值+1<br>→ 落状态与投影（issue_pending=true），写入发版策略<br>（默认 delivery_required=false、skip_allowed=true）<br>与规格策略（standard 默认 spec_sync_required=true），<br>planner 摘要与验收标准持久化进工单"]
   PLN --> OWI
-  OWI --> V["核对返回的 Issue 标题/正文<br>与 waiting_approval 状态"]
+  OWI --> FL["在线窗口 hulane_flush（可在开单同轮，或下一次联网时）：<br>幂等预查 `<ID> ` 标题 → 补建/复用 Issue（正文由持久化<br>摘要/验收标准重建）→ 标题落 `<ID> <title>`<br>→ issue_created 回填 → 最终状态一次同步；<br>pending 期间每次 sync 降级 skipped=issue_pending"]
+  FL --> V["核对返回的 Issue 标题/正文<br>与 waiting_approval 状态<br>（离线开单时审批包评论展期至 flush 后、关单前）"]
   V -->|"page_design_needed=true"| DSN["编排者生成种子串 + 收集品味参考，<br>只读派发 hulane-designer（钉在 Kimi）：<br>读 UI 规范 + 令牌 + ≤2 个同类参考页，<br>种子串衍生设计方向，产出设计说明（≤150 行，<br>含偏离声明）与按需 HTML 原型<br>（.hulane/designs/，git 排除）"]
   V -->|"不需要页面设计"| GA
   DSN --> CRT{"原型存在且会话<br>有渲染能力？"}
@@ -60,7 +61,12 @@ flowchart TD
 
 要点：
 
-- 立项先有 GitHub Issue， Work Item 编号由 Issue 号派生（`REQ-<n>` / `BUG-<n>`）。
+- 立项本地优先（REQ-11）：Work Item 编号由 store 本地自增（REQ 与 BUG 前缀合并取
+  数字最大值+1，与 GitHub Issue 号解耦）；GitHub Issue 延后到 `hulane_flush`
+  在线窗口补建，`issue_created` 自环回填 `issue_number`/`github_issue_url` 后
+  `issue_pending` 翻 false。pending 期间 status 刷新只读本地、sync 统一降级
+  `skipped: "issue_pending"`；`pr_created`、合并、关单与 Done 不变式均要求
+  Issue 已补建（对 pending 抛错并提示先 flush）。
 - 小需求专属的简化只有"跳过 planner 派发"一处，其余状态机步骤与 standard 完全一致；
   Coder 阶段发现范围膨胀会立即把 size 打回 standard 并补派 planner。注意
   `spec_sync_required` 的写入通道在 Gate A 后已收口（仅 approve_requirement 可改），

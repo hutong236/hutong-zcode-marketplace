@@ -1,7 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { applyEvent, createWorkItem, validateWorkItem, validateWorkItemInput } from "../scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, nextLocalWorkItemNumber, validateWorkItem, validateWorkItemInput } from "../scripts/lib/state-machine.mjs";
 import { findControlRoot, getItem, initializeRepositoryState, putItem, readStore } from "../scripts/lib/state-store.mjs";
-import { hydrateItemFromGitHub, resolveRepository, runGh, syncItemToGitHub } from "../scripts/lib/github-state.mjs";
+import {
+  createIssue,
+  findIssueByTitlePrefix,
+  hydrateItemFromGitHub,
+  renameIssueTitle,
+  resolveRepository,
+  runGh,
+  syncItemToGitHub,
+} from "../scripts/lib/github-state.mjs";
 import { createWorktree } from "../scripts/lib/worktree.mjs";
 import { issueAuthorization, issueReleaseAuthorization } from "../scripts/lib/authorization.mjs";
 import { validateDeliveryEvidence } from "../scripts/lib/delivery.mjs";
@@ -31,7 +39,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: "hulane_open_work_item",
-    description: "Create the GitHub Issue first, then canonical Work Item state and its local read-only projection. Stops at Gate A.",
+    description: "Create the Work Item locally first (offline-capable, zero gh calls): local REQ/BUG numbering, issue_pending=true, planner summary and acceptance criteria persisted for flush. Stops at Gate A. The GitHub Issue is created later by hulane_flush.",
     inputSchema: objectSchema({
       title: text,
       type: { enum: ["feature", "bug", "refactor", "maintenance"] },
@@ -79,6 +87,15 @@ export const TOOL_DEFINITIONS = Object.freeze([
     description: "Hydrate canonical state from a GitHub Issue and refresh the local cache/projection.",
     inputSchema: objectSchema({ issue_number: { type: "integer", minimum: 1 }, repository: { type: "string" } }, ["issue_number"]),
     annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: "hulane_flush",
+    description: "Complete a pending Work Item's GitHub Issue in one serial online window: idempotent title-prefix precheck, create-or-reuse the Issue (body rebuilt from the persisted planner summary / acceptance criteria / delivery policy), rename to '<ID> <title>', record the issue_created self-loop, then one sync with the final state label and full machine comment. Push/PR/CI/merge/close stay in their existing guarded flows.",
+    inputSchema: objectSchema({
+      id, actor: { const: "orchestrator" }, evidence: text,
+      sync: { type: "boolean", default: true }, repository: { type: "string" },
+    }, ["id", "actor", "evidence"]),
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "hulane_worktree_create",
@@ -152,7 +169,11 @@ function repositoryFor(root, explicit) {
 function persist(root, item, { sync = true, repository, projection = {} } = {}) {
   putItem(root, item);
   const projectionFile = writeProjection(root, item, projection);
-  const github = sync ? syncItemToGitHub(item, { repository: repositoryFor(root, repository), cwd: root }) : null;
+  // 统一 sync 降级:pending 工单不解析仓库(那可能需要 gh)、syncItemToGitHub
+  // 自身对 pending 短路返回 skipped,离线流转全程不被 GitHub 阻塞
+  const github = sync
+    ? syncItemToGitHub(item, item.issue_pending === true ? { cwd: root } : { repository: repositoryFor(root, repository), cwd: root })
+    : null;
   return { item, projection_file: projectionFile, github };
 }
 
@@ -230,13 +251,18 @@ function liveFacts(root, item, repository) {
   return facts;
 }
 
-function issueBody(args) {
-  const criteria = args.acceptance_criteria.map((value) => `- [ ] ${value}`).join("\n");
-  const size = args.size ?? "standard";
+// Issue 正文模板:开单入参与持久化工单共用同一份字段(planner_summary/
+// acceptance_criteria/size/发版策略),flush 重建正文与首建不漂移
+function issueBody(source) {
+  const criteria = (source.acceptance_criteria?.length
+    ? source.acceptance_criteria.map((value) => `- [ ] ${value}`)
+    : ["- [ ] 待补充"]
+  ).join("\n");
+  const size = source.size ?? "standard";
   const intake = size === "small"
     ? "## Intake\n- size: small (fast lane — inline plan, no planner subagent dispatch)\n\n"
     : "";
-  return `<!-- cmdb-dev-work-item:v2 -->\n\n${intake}## Planner summary\n${args.planner_summary}\n\n## Acceptance criteria\n${criteria}\n\n## Delivery policy\n- delivery_required: ${args.delivery_required}\n- skip_allowed: ${args.skip_allowed}\n- reason: ${args.delivery_reason || "Runtime delivery required"}\n`;
+  return `<!-- cmdb-dev-work-item:v2 -->\n\n${intake}## Planner summary\n${source.planner_summary || "待补充"}\n\n## Acceptance criteria\n${criteria}\n\n## Delivery policy\n- delivery_required: ${source.delivery_required}\n- skip_allowed: ${source.skip_allowed}\n- reason: ${source.delivery_reason || "Runtime delivery required"}\n`;
 }
 
 export function callTool(name, args = {}, context = {}) {
@@ -246,61 +272,46 @@ export function callTool(name, args = {}, context = {}) {
   if (name === "hulane_initialize") return initializeTargetRepository(root, context.pluginRoot, args.repository ?? null);
 
   if (name === "hulane_open_work_item") {
-    // 输入校验前置于建 Issue：参数不合法时绝不产生 GitHub Issue。
-    // 此前的顺序是先建 Issue 再校验且失败无回滚，会留下孤儿 Issue。
+    // 本地优先开单(REQ-11):输入校验前置,之后零 gh 调用——编号取 store 内
+    // 全部工单(REQ/BUG 合并)最大值+1,前缀由 type 决定;planner_summary 与
+    // acceptance_criteria 持久化进工单,供 flush 在线窗口重建 Issue 正文;
+    // 历史上「先建 Issue 再初始化」的孤儿与回滚问题随建单本地化一并消失
     validateWorkItemInput(args);
-    const repository = repositoryFor(root, args.repository);
-    const issueUrl = runGh(["issue", "create", "--repo", repository, "--title", args.title, "--body", issueBody(args)], { cwd: root });
-    let issueNumber = null;
-    try {
-      issueNumber = Number(issueUrl.match(/\/issues\/(\d+)(?:\?.*)?$/)?.[1]);
-      if (!Number.isInteger(issueNumber)) throw new Error(`Could not parse Issue number from: ${issueUrl}`);
-      const prefix = args.type === "bug" ? "BUG" : "REQ";
-      const workItemId = `${prefix}-${issueNumber}`;
-      runGh(["issue", "edit", String(issueNumber), "--repo", repository, "--title", `${workItemId} ${args.title}`], { cwd: root });
-      initializeRepositoryState(root, repository);
-      const item = createWorkItem({
-        id: workItemId,
-        issue_number: issueNumber,
-        github_issue_url: issueUrl,
-        title: args.title,
-        type: args.type,
-        risk_level: args.risk_level,
-        size: args.size ?? "standard",
-        delivery_required: args.delivery_required,
-        delivery_reason: args.delivery_reason,
-        skip_allowed: args.skip_allowed,
-        spec_sync_required: args.spec_sync_required,
-        actor: "orchestrator",
-        evidence: `GitHub Issue #${issueNumber} created before implementation`,
-      });
-      const result = persist(root, item, {
-        sync: true,
-        repository,
-        projection: { plannerSummary: args.planner_summary, acceptanceCriteria: args.acceptance_criteria },
-      });
-      return { ...result, issue_url: issueUrl };
-    } catch (error) {
-      // 兜底回滚：初始化半途失败时关闭刚创建的 Issue，杜绝孤儿。
-      // 回滚自身失败不掩盖原始错误，把两条信息一并抛出。
-      let rollback = "";
-      if (Number.isInteger(issueNumber)) {
-        try {
-          runGh([
-            "issue", "close", String(issueNumber), "--repo", repository,
-            "--comment", `孤儿 Issue 自动回滚：Work Item 初始化失败（${error.message}）。本单未入状态机，请忽略并等待重试新建。`,
-          ], { cwd: root });
-          rollback = `; orphan issue #${issueNumber} auto-closed`;
-        } catch (rollbackError) {
-          rollback = `; auto-close of orphan issue #${issueNumber} failed: ${rollbackError.message}`;
-        }
-      }
-      throw new Error(`Issue was created at ${issueUrl}, but Work Item initialization failed: ${error.message}${rollback}`);
+    const configured = readStore(root).repository;
+    if (args.repository && configured && args.repository !== configured) {
+      throw new Error(`State store belongs to ${configured}, not ${args.repository}`);
     }
+    const repository = args.repository ?? configured ?? null;
+    const localNumber = nextLocalWorkItemNumber(readStore(root));
+    const prefix = args.type === "bug" ? "BUG" : "REQ";
+    const workItemId = `${prefix}-${localNumber}`;
+    initializeRepositoryState(root, repository);
+    const item = createWorkItem({
+      id: workItemId,
+      issue_pending: true,
+      title: args.title,
+      type: args.type,
+      risk_level: args.risk_level,
+      size: args.size ?? "standard",
+      delivery_required: args.delivery_required,
+      delivery_reason: args.delivery_reason,
+      skip_allowed: args.skip_allowed,
+      spec_sync_required: args.spec_sync_required,
+      planner_summary: args.planner_summary,
+      acceptance_criteria: args.acceptance_criteria,
+      actor: "orchestrator",
+      evidence: `Local Work Item ${workItemId} created offline; GitHub Issue pending flush`,
+    });
+    const result = persist(root, item, {
+      sync: true,
+      repository,
+      projection: { plannerSummary: args.planner_summary, acceptanceCriteria: args.acceptance_criteria },
+    });
+    return { ...result, issue_pending: true, flush_hint: "GitHub Issue not created yet; call hulane_flush in the next online window" };
   }
 
   if (name === "hulane_transition") {
-    if (["start_planning", "checks_passed", "image_verified", "specs_synced"].includes(args.event)) {
+    if (["start_planning", "checks_passed", "image_verified", "specs_synced", "issue_created"].includes(args.event)) {
       throw new Error(`${args.event} is reserved for its dedicated MCP evidence tool`);
     }
     const item = getItem(root, args.id);
@@ -313,10 +324,16 @@ export function callTool(name, args = {}, context = {}) {
     let item = getItem(root, args.id);
     let repository = null;
     if (args.refresh_from_github) {
-      repository = repositoryFor(root, args.repository);
-      item = hydrateItemFromGitHub({ repository, issueNumber: item.issue_number, cwd: root });
-      putItem(root, item);
-      writeProjection(root, item);
+      if (item.issue_pending === true) {
+        // remote-truth-wins 尊重 pending:远端尚无此单,刷新退化为只读本地,
+        // 不因远端无单清掉本地或报错
+        item = getItem(root, args.id);
+      } else {
+        repository = repositoryFor(root, args.repository);
+        item = hydrateItemFromGitHub({ repository, issueNumber: item.issue_number, cwd: root });
+        putItem(root, item);
+        writeProjection(root, item);
+      }
     }
     return { item, facts: repository ? liveFacts(root, item, repository) : null };
   }
@@ -329,6 +346,8 @@ export function callTool(name, args = {}, context = {}) {
 
   if (name === "hulane_sync") {
     const item = getItem(root, args.id);
+    // pending 工单的 sync 统一降级:不解析仓库、不触 gh,返回 skipped
+    if (item.issue_pending === true) return syncItemToGitHub(item, { cwd: root });
     return syncItemToGitHub(item, { repository: repositoryFor(root, args.repository), cwd: root });
   }
 
@@ -336,6 +355,48 @@ export function callTool(name, args = {}, context = {}) {
     const item = hydrateItemFromGitHub({ repository: repositoryFor(root, args.repository), issueNumber: args.issue_number, cwd: root });
     putItem(root, item);
     return { item, projection_file: writeProjection(root, item) };
+  }
+
+  if (name === "hulane_flush") {
+    // flush 在线窗口(REQ-11):一次串行完成幂等预查→补建/复用 Issue→标题落位
+    // →issue_created 回填→按最终状态做一次 sync(最终 hulane:<status> 标签 +
+    // 全量状态注释,注释本身携带全量 history,不回放历史标签)。
+    // push/PR/CI/合并/关单不并入 flush,仍走既有逐环节守卫流程。
+    const item = getItem(root, args.id);
+    if (item.issue_pending !== true) {
+      throw new Error(`${args.id} has no pending GitHub Issue to flush (already bound to Issue #${item.issue_number}); use hulane_sync instead`);
+    }
+    const repository = repositoryFor(root, args.repository);
+    const run = (ghArgs) => runGh(ghArgs, { cwd: root });
+    const canonicalTitle = `${item.id} ${item.title}`;
+
+    // 1. 幂等预查:Issue 已建但本地回填未落(flush 中途断线)时复用,不重复建
+    const existing = findIssueByTitlePrefix({ repository, workItemId: item.id, cwd: root, run });
+    let issue;
+    if (existing) {
+      issue = { number: existing.number, url: existing.url };
+      renameIssueTitle({ repository, issueNumber: issue.number, title: canonicalTitle, cwd: root, run });
+    } else {
+      // 2+3. 补建 Issue:正文由工单持久化的 planner_summary/acceptance_criteria/
+      // 发版策略重建,标题直接落 `<ID> <title>` 规范形
+      issue = createIssue({ repository, title: canonicalTitle, body: issueBody(item), cwd: root, run });
+    }
+
+    // 4. issue_created 自环回填(写入通道收口:仅此事件可写 issue_number/issue_pending)
+    const next = applyEvent(item, "issue_created", {
+      actor: args.actor,
+      evidence: args.evidence,
+      patch: { issue_number: issue.number, github_issue_url: issue.url },
+    });
+
+    // 5. 以当前最终状态做一次 sync
+    const result = persist(root, next, { sync: args.sync !== false, repository });
+    return {
+      ...result,
+      issue_number: issue.number,
+      issue_url: issue.url,
+      reused_existing_issue: Boolean(existing),
+    };
   }
 
   if (name === "hulane_worktree_create") {

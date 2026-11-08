@@ -2,7 +2,7 @@
 
 import process from "node:process";
 import fs from "node:fs";
-import { applyEvent, createWorkItem, validateWorkItem } from "./lib/state-machine.mjs";
+import { applyEvent, createWorkItem, nextLocalWorkItemNumber, validateWorkItem } from "./lib/state-machine.mjs";
 import { findControlRoot, getItem, initializeRepositoryState, putItem, readStore } from "./lib/state-store.mjs";
 import { hydrateItemFromGitHub, resolveRepository, syncItemToGitHub } from "./lib/github-state.mjs";
 import { createWorktree } from "./lib/worktree.mjs";
@@ -40,7 +40,8 @@ function output(value, json = true) {
 function help() {
   output(`hulane-state commands:
   init [--repository owner/repo]
-  new --id REQ-123 --issue 123 --title ... --risk low [--size small] --delivery-required true [--skip-allowed false] [--delivery-reason ...] [--spec-sync-required false]
+  new [--id REQ-123] [--issue 123] --title ... --risk low [--size small] --delivery-required true [--skip-allowed false] [--delivery-reason ...] [--spec-sync-required false]
+    (omit --issue for local-first creation: local numbering, issue_pending=true, GitHub Issue deferred to hulane_flush)
   transition REQ-123 <event> --actor <identity> --evidence <text> [--patch JSON] [--to state]
   status [REQ-123]
   validate [REQ-123]
@@ -67,9 +68,9 @@ async function main() {
 
   if (command === "new") {
     initializeRepositoryState(root, flags.repository ?? null);
-    const item = createWorkItem({
-      id: required(flags, "id"),
-      issue_number: Number(required(flags, "issue")),
+    // 本地优先开单:省略 --issue 时编号取 store 内全部工单(REQ/BUG 合并)
+    // 最大值+1,issue_pending=true,GitHub Issue 展期到 hulane_flush 在线窗口
+    const input = {
       title: required(flags, "title"),
       type: flags.type,
       risk_level: required(flags, "risk"),
@@ -81,7 +82,18 @@ async function main() {
       github_issue_url: flags.github_issue_url,
       actor: flags.actor ?? "orchestrator",
       evidence: flags.evidence,
-    });
+    };
+    if (flags.issue === undefined) {
+      const number = nextLocalWorkItemNumber(readStore(root));
+      const derivedId = `${flags.type === "bug" ? "BUG" : "REQ"}-${number}`;
+      if (flags.id !== undefined && flags.id !== derivedId) {
+        throw new Error(`--id ${flags.id} conflicts with the locally derived id ${derivedId}; omit --id or pass --issue`);
+      }
+      const item = createWorkItem({ ...input, id: derivedId, issue_pending: true });
+      putItem(root, item);
+      return output(item);
+    }
+    const item = createWorkItem({ ...input, id: required(flags, "id"), issue_number: Number(flags.issue) });
     putItem(root, item);
     return output(item);
   }
@@ -160,16 +172,36 @@ async function main() {
   if (command === "sync") {
     const [id] = positional;
     if (!id) throw new Error("sync requires <ID>");
+    const item = getItem(root, id);
+    // pending 工单 sync 降级:远端尚无此单,跳过而非报错,联网后用 flush 补建
+    if (item.issue_pending === true) {
+      return output({
+        skipped: "issue_pending",
+        hint: `Issue 未建（issue_pending=true），本次 sync 已跳过；联网后调用 hulane_flush 补建并一次同步最终状态`,
+      });
+    }
     const repository = flags.repository ?? resolveRepository(root);
-    return output(syncItemToGitHub(getItem(root, id), { repository, cwd: root }));
+    return output(syncItemToGitHub(item, { repository, cwd: root }));
   }
 
   if (command === "hydrate") {
     const issueNumber = Number(required(flags, "issue"));
     const repository = flags.repository ?? resolveRepository(root);
-    const item = hydrateItemFromGitHub({ repository, issueNumber, cwd: root });
-    putItem(root, item);
-    return output(item);
+    try {
+      const item = hydrateItemFromGitHub({ repository, issueNumber, cwd: root });
+      putItem(root, item);
+      return output(item);
+    } catch (error) {
+      // 降级文案:该 Issue 可能是 flush 中途断线留下的「已建未回填」半成品——
+      // 本地 pending 工单尚无状态注释可取,重跑 hulane_flush 幂等补建即可恢复
+      if (/no hulane state comment/.test(String(error.message))) {
+        const pending = Object.values(readStore(root).items).find((entry) => entry.issue_pending === true);
+        if (pending) {
+          throw new Error(`${error.message};本地存在待补建工单 ${pending.id}（issue_pending=true）:请在线重跑 hulane_flush（幂等预查会复用既有 Issue，不重复建）`);
+        }
+      }
+      throw error;
+    }
   }
 
   throw new Error(`Unknown command: ${command}`);

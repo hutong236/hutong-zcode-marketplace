@@ -8,11 +8,27 @@ the control plane. GitHub Issue state is canonical, while local JSON and
 Obsidian Markdown are recoverable caches/projections.
 
 ```text
-Requirement → Issue（含 spec delta 进 Gate A 审批包，仅 spec_sync_required 工单）→ Designer → Design Critic（截图评分回环，锚定 Awwwards/Webby/FWA 获奖品质，仅页面级工单）→ Human Approval → Isolated Worktree → Coder（PR 内完成 delta→主规格智能合并 + 决策史归档）→ Tester → Reviewer → PR → Merge
+Requirement → 本地开单（离线可用，零 gh 调用；planner 摘要/验收标准持久化）→ Flush 在线窗口（幂等预查→补建/复用 Issue→issue_created 回填→最终状态一次同步；含 spec delta 进 Gate A 审批包，仅 spec_sync_required 工单）→ Designer → Design Critic（截图评分回环，锚定 Awwwards/Webby/FWA 获奖品质，仅页面级工单）→ Human Approval → Isolated Worktree → Coder（PR 内完成 delta→主规格智能合并 + 决策史归档）→ Tester → Reviewer → PR → Merge
   → Tag Confirm（人工 Gate：打 tag 触发镜像构建，或按需批量发版前人工 skip）→ Actions Image → Spec Sync 校验（hulane_record_specs_synced，specs_commit_sha=merged_sha）→ Close Issue → Done
 ```
 
-Commands: `/hulane_check`, `/hulane_init`, `/hulane_dev`, `/hulane_approve`, `/hulane_merge_approve`, `/hulane_tag_approve`, `/hulane_release`, `/hulane_status`, `/hulane_resume`.
+Commands: `/hulane_check`, `/hulane_init`, `/hulane_dev`, `/hulane_approve`, `/hulane_merge_approve`, `/hulane_tag_approve`, `/hulane_release`, `/hulane_status`, `/hulane_resume`, `/hulane_flush`.
+
+Offline resilience (V3.9.x, REQ-11): `hulane_open_work_item` is local-first —
+the REQ/BUG number is allocated from the store (max across all REQ and BUG
+items + 1), the item starts `issue_pending: true` with a null `issue_number`,
+and every GitHub write is compressed into one `hulane_flush` online window
+(idempotent title precheck reuses an interrupted flush's Issue, the body is
+rebuilt from the persisted planner summary/acceptance criteria, then the
+`issue_created` self-loop backfills the binding and one sync ships the final
+state label plus the full machine comment). While pending, syncs degrade to
+`skipped: "issue_pending"` and `hulane_status` refresh reads local-only;
+`pr_created`, merge, Issue close, and the Done invariant all require the Issue
+to exist, and `issue_number`/`issue_pending` are writable only by the
+`issue_created` event. Preflight groups GitHub-dependent checks under
+`online_required` and reports `offline_open_ready` for the local hard items.
+Push/PR/CI/merge/close keep their existing per-step guards — flush grants
+nothing.
 
 Prerequisites in ZCode terminal:
 
