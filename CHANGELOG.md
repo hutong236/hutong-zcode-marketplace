@@ -3,7 +3,7 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
-## [3.9.0] - 2026-10-19
+## [3.10.0] - 2026-11-08
 
 ### Added
 
@@ -33,6 +33,11 @@ Versions follow Semantic Versioning.
   REQ-3/5/7/9 行为逐字节不变。离线开单时 Gate A 审批包（含 spec delta）评论
   义务展期至 flush 窗口、`issue_closed` 前发布，在线行为不变。主规格新增
   `openspec/specs/hulane-work-item-lifecycle/spec.md`。
+
+## [3.9.0] - 2026-10-19
+
+### Added
+
 - 执行纪律守卫（REQ-9，检测面移植自 affaan-m/ECC，MIT，轻量重写）：在编码行为
   那一刻全局强制三类纪律检查，不依赖 hulane 管理状态。①Bash 侧（guard.mjs
   进程内前置，纪律 deny 优先于白名单远端与令牌授权）：受保护 git 子命令
