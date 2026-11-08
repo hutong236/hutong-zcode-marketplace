@@ -30,7 +30,11 @@
   "properties": {
     "schema_version": { "const": 2 },
     "id": { "pattern": "^(REQ|BUG)-[1-9][0-9]*$" },
-    "issue_number": { "type": "integer", "minimum": 1 },
+    "issue_pending": { "type": "boolean" },
+    "issue_number": { "type": ["integer", "null"], "minimum": 1 },
+    "planner_summary": { "type": ["string", "null"] },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "github_issue_url": { "type": ["string", "null"], "pattern": "^https://github\\.com/" },
     "title": { "type": "string", "minLength": 1 },
     "status": {
       "enum": [
@@ -76,6 +80,20 @@
     {
       "if": { "properties": { "delivery_required": { "const": true } } },
       "then": { "properties": { "skip_allowed": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "issue_pending": { "const": true } }, "required": ["issue_pending"] },
+      "then": {
+        "properties": {
+          "issue_number": { "type": "null" },
+          "github_issue_url": { "type": "null" },
+          "issue_state": { "const": "open" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "issue_pending": { "const": false } }, "required": ["issue_pending"] },
+      "then": { "properties": { "issue_number": { "type": "integer", "minimum": 1 } } }
     }
   ],
   "additionalProperties": true

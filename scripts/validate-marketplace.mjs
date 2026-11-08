@@ -108,7 +108,7 @@ const commands = filesIn("hulane/commands", ".md");
 const agents = filesIn("hulane/agents", ".md");
 const skillFiles = walk("hulane/skills").filter((name) => name.endsWith("/SKILL.md"));
 
-assert(commands.length === 9, `expected 9 commands, found ${commands.length}`);
+assert(commands.length === 10, `expected 10 commands, found ${commands.length}`);
 assert(agents.length === 7, `expected 7 agents, found ${agents.length}`);
 assert(skillFiles.length === 1, `expected 1 skill, found ${skillFiles.length}`);
 
@@ -186,10 +186,12 @@ for (const requiredFile of [
 }
 
 const { TOOL_DEFINITIONS } = await import(new URL("../hulane/mcp/tools.mjs", import.meta.url));
-assert(TOOL_DEFINITIONS.length === 14, `expected 14 MCP tools, found ${TOOL_DEFINITIONS.length}`);
+assert(TOOL_DEFINITIONS.length === 15, `expected 15 MCP tools, found ${TOOL_DEFINITIONS.length}`);
 assert(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size === TOOL_DEFINITIONS.length, "MCP tool names must be unique");
 assert(TOOL_DEFINITIONS.some((tool) => tool.name === "hulane_record_specs_synced"),
   "specs_synced evidence tool is missing from the MCP catalog");
+assert(TOOL_DEFINITIONS.some((tool) => tool.name === "hulane_flush"),
+  "flush online-window tool is missing from the MCP catalog");
 assert(TOOL_DEFINITIONS.some((tool) => tool.name === "hulane_authorize_release"),
   "release authorization tool is missing from the MCP catalog");
 

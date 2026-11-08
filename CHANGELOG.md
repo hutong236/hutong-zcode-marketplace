@@ -7,6 +7,32 @@ Versions follow Semantic Versioning.
 
 ### Added
 
+- 离线韧性——本地优先开单、sync 降级与 flush 上线（REQ-11）：`hulane_open_work_item`
+  本地化（零 gh 调用，断网可开单）——编号取 store 内全部工单（REQ 与 BUG 前缀
+  合并）数字最大值+1、前缀由 type 决定，与 GitHub Issue 号解耦；新工单置
+  `issue_pending=true`、`issue_number=null`、`github_issue_url=null`，
+  `planner_summary` 与 `acceptance_criteria` 持久化进工单供 flush 重建 Issue 正文
+  （不再调 gh issue create/edit，孤儿回滚代码随之删除）。pending 不变量：
+  `issue_number`/`github_issue_url` 必为 null、`issue_state` 必为 open；
+  `issue_number`/`issue_pending` 写入通道收口为仅 `issue_created` 自环事件可写
+  （其余 transition patch 携带即抛 "Unsupported state patch field"），
+  `issue_closed`、Done 不变式、`pr_created` 与授权层 issue-close/pr-merge 均要求
+  Issue 已补建（对 pending 抛错并提示先 flush）。sync 降级：
+  `syncItemToGitHub` 对 pending 返回 `{skipped: "issue_pending"}` 而非抛错，
+  全部控制面调用方经统一降级不被阻塞；`hulane_status(refresh_from_github=true)`
+  对 pending 只读本地（remote-truth-wins 尊重 pending）。新增 MCP 工具
+  `hulane_flush`（工具目录 14→15）与 `/hulane_flush` 命令：一次串行在线窗口完成
+  幂等 `<ID> ` 标题预查→补建/复用 Issue→标题落位→`issue_created` 回填→按最终
+  状态一次 sync（最终 `hulane:<status>` 标签 + 全量状态注释，不回放历史标签）；
+  push/PR/CI/合并/关单仍走既有逐环节守卫，guard/discipline 零改动。配套：
+  projection frontmatter 与 JSON schema 增 `issue_pending` 等字段与 pending 条件
+  约束（pending 时 GitHub 节显示「Issue 待补建（flush）」）；preflight 把 GitHub
+  依赖检查归入 `online_required` 分组并新增 `offline_open_ready` 布尔；
+  兼容 CLI `new` 允许省略 `--issue`（本地号自增）、`sync`/`hydrate` 对 pending
+  出降级文案；存量工单经 normalizeWorkItem 祖父回填 `issue_pending=false`，
+  REQ-3/5/7/9 行为逐字节不变。离线开单时 Gate A 审批包（含 spec delta）评论
+  义务展期至 flush 窗口、`issue_closed` 前发布，在线行为不变。主规格新增
+  `openspec/specs/hulane-work-item-lifecycle/spec.md`。
 - 执行纪律守卫（REQ-9，检测面移植自 affaan-m/ECC，MIT，轻量重写）：在编码行为
   那一刻全局强制三类纪律检查，不依赖 hulane 管理状态。①Bash 侧（guard.mjs
   进程内前置，纪律 deny 优先于白名单远端与令牌授权）：受保护 git 子命令

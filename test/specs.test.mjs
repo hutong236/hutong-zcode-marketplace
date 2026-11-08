@@ -147,7 +147,7 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(capabilities, ["hulane-execution-discipline", "hulane-release-workflow", "hulane-spec-layer"]);
+  assert.deepEqual(capabilities, ["hulane-execution-discipline", "hulane-release-workflow", "hulane-spec-layer", "hulane-work-item-lifecycle"]);
   const requirementCounts = {};
   for (const capability of capabilities) {
     const spec = validateSpecFile(
@@ -169,9 +169,10 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
-  // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组
-  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"] };
+  assert.deepEqual(archivedIds, ["REQ-11", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
+  // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组;
+  // REQ-11 的 delta:新能力四个 ADDED + 两个能力各展期一个 MODIFIED 条目
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,

@@ -15,12 +15,13 @@ V2 separates orchestration, authority, execution, and evidence.
 
 | Tool | Effect |
 | --- | --- |
-| `hulane_preflight` | Read-only repository and server-policy readiness |
+| `hulane_preflight` | Read-only repository and server-policy readiness (GitHub-dependent checks grouped as `online_required`, plus an `offline_open_ready` verdict for local-first intake) |
 | `hulane_initialize` | Install managed cache/views/check workflows |
-| `hulane_open_work_item` | Create Issue first, then state and projection |
-| `hulane_transition` | Apply one evidence-bearing state event and sync |
-| `hulane_status` / `hulane_validate` | Reconcile and validate truth |
+| `hulane_open_work_item` | Create the Work Item locally (offline-capable, zero gh calls; local REQ/BUG numbering, `issue_pending=true`, planner summary/acceptance criteria persisted) |
+| `hulane_transition` | Apply one evidence-bearing state event and sync (pending items sync as `skipped: "issue_pending"`) |
+| `hulane_status` / `hulane_validate` | Reconcile and validate truth (pending items refresh local-only) |
 | `hulane_sync` / `hulane_hydrate` | Move canonical machine state to/from GitHub |
+| `hulane_flush` | Complete a pending item's Issue in one online window: idempotent title precheck, create-or-reuse, `issue_created` backfill, one final-state sync |
 | `hulane_worktree_create` | Create the one isolated Work Item worktree |
 | `hulane_verify_pr_checks` | Verify the exact PR head/check and select the available merge guard |
 | `hulane_authorize` | Issue one state-bound token for push/tag; merge and Issue close are state-verified by the guard |

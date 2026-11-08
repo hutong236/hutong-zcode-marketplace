@@ -10,7 +10,7 @@
 | `invoice-expense-report` | 0.1.0 | 发票报销整理：PDF 发票还原行程链、人工确认补贴天数，生成报销统计 Excel |
 | `token-speed` | 0.1.0 | 会话 Token 输出速度(t/s)与用量统计：`/tps` 命令 + `token_speed` MCP 工具 |
 
-`hulane` 组件：9 个 `/hulane_*` 命令、14 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
+`hulane` 组件：10 个 `/hulane_*` 命令、15 个 `hulane-control` MCP 工具、7 个子 Agent（planner / designer / design-critic / coder / tester / build-checker / reviewer）、3 个生命周期 Hook、1 个 Skill、Obsidian 投影模板、GitHub Actions 模板与 OpenSpec 规格模板。
 
 `invoice-expense-report` 组件：1 个 Skill（全 PDF 内容驱动：高铁票/机票/滴滴/酒店发票分类提取、行程链完整性确认、补贴天数人工确认、按出差出报告与 Excel）。版本独立演进，不参与 `npm run sync-version` 的 hulane 版本同步。
 
@@ -40,6 +40,13 @@ git@github.com:hutong236/hutong-zcode-marketplace.git
 
 ## 安全边界（hulane）
 
+- 离线韧性：开单本地优先（零 gh 调用，REQ/BUG 编号取 store 内全部工单数字最大值+1，
+  `issue_pending=true`，planner 摘要与验收标准持久化进工单）；GitHub 写操作压缩到
+  `hulane_flush` 一次在线窗口（幂等预查→补建/复用 Issue→标题落位→`issue_created`
+  回填→按最终状态一次同步）。pending 期间全部 sync 统一降级为 `skipped: "issue_pending"`、
+  status 刷新只读本地；`pr_created`、合并、关单（状态机 + 授权层双拦）与 Done 不变式
+  均要求 Issue 已补建——`issue_number`/`issue_pending` 仅 `issue_created` 事件可写，
+  push/PR/CI/合并/关单仍走既有逐环节守卫，守卫零改动；
 - Gate A：开单同轮默认自动放行（approval_source="auto_intake"、actor=orchestrator，
   evidence 引用用户本轮原话；用户原话含明确批准措辞如「直接做」「预授权」时走
   pre_authorized、actor=human:<身份>），审批包（含 spec delta 全文）先发 Issue 评论

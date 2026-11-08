@@ -90,8 +90,8 @@ function specsRepository({ malformed = false, withSpecs = true } = {}) {
 }
 
 test("MCP tool catalog is deterministic and input schemas reject extra fields", () => {
-  assert.equal(TOOL_DEFINITIONS.length, 14);
-  assert.equal(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size, 14);
+  assert.equal(TOOL_DEFINITIONS.length, 15);
+  assert.equal(new Set(TOOL_DEFINITIONS.map((tool) => tool.name)).size, 15);
   const preflight = TOOL_DEFINITIONS.find((tool) => tool.name === "hulane_preflight");
   assert.deepEqual(validateInput(preflight.inputSchema, { unexpected: true }), ["arguments.unexpected is not allowed"]);
 });
@@ -141,7 +141,7 @@ test("MCP server supports modern discovery and legacy initialization", () => {
   assert.ok(responses.find((response) => response.id === "discover").result.supportedVersions.includes("2026-07-28"));
   assert.equal(responses.find((response) => response.id === "modern-list").result.resultType, "complete");
   assert.equal(responses.find((response) => response.id === 1).result.protocolVersion, "2025-11-25");
-  assert.equal(responses.find((response) => response.id === 2).result.tools.length, 14);
+  assert.equal(responses.find((response) => response.id === 2).result.tools.length, 15);
   assert.equal(responses.find((response) => response.id === 3).result.isError, undefined);
   assert.equal(responses.find((response) => response.id === 4).result.structuredContent.valid, true);
   assert.ok(fs.existsSync(path.join(root, ".hulane", "state.json")));
@@ -278,6 +278,75 @@ function withFakeGh(sandbox, fn) {
   }
 }
 
+// 断网垫片:gh 存在但每次调用必败(模拟网络不可达),仍记录调用日志——
+// 日志文件缺失即证明零 gh 调用
+function offlineGhBin(sandbox) {
+  const bin = path.join(sandbox, "offline-bin");
+  fs.mkdirSync(bin, { recursive: true });
+  const shim = [
+    "#!/bin/sh",
+    'sandbox="$(cd "$(dirname "$0")/.." && pwd)"',
+    'printf \'%s\\n\' "$*" >> "$sandbox/gh-calls.log"',
+    'echo "simulated network unreachable" >&2',
+    "exit 1",
+  ].join("\n");
+  fs.writeFileSync(path.join(bin, "gh"), shim, { mode: 0o755 });
+  return bin;
+}
+
+function withOfflineGh(sandbox, fn) {
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${offlineGhBin(sandbox)}${path.delimiter}${previousPath}`;
+  try {
+    return fn(sandbox);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+}
+
+// flush 垫片:支撑幂等预查(issue list 读 gh-issues.json)、补建(issue create)、
+// 状态注释首发(POST 返回 424242)与全路径 sync(issue view/labels、评论列表空)
+function flushGhBin(sandbox) {
+  const bin = path.join(sandbox, "flush-bin");
+  fs.mkdirSync(bin, { recursive: true });
+  const shim = [
+    "#!/bin/sh",
+    'sandbox="$(cd "$(dirname "$0")/.." && pwd)"',
+    'printf \'%s\\n\' "$*" >> "$sandbox/gh-calls.log"',
+    'case "$1 $2" in',
+    '  "issue list")',
+    '    if [ -f "$sandbox/gh-issues.json" ]; then cat "$sandbox/gh-issues.json"; else echo "[]"; fi',
+    "    ;;",
+    '  "issue create")',
+    '    echo "https://github.com/example/org/issues/99"',
+    "    ;;",
+    '  "issue view")',
+    "    echo '{\"labels\":[]}'",
+    "    ;;",
+    "  *)",
+    '    case "$*" in',
+    '      *"api --method POST repos/"*"/comments"*) echo "424242" ;;',
+    '      *"comments?per_page=100"*) echo "[]" ;;',
+    "      *) : ;;",
+    "    esac",
+    "    ;;",
+    "esac",
+    "exit 0",
+  ].join("\n");
+  fs.writeFileSync(path.join(bin, "gh"), shim, { mode: 0o755 });
+  return bin;
+}
+
+function withFlushGh(sandbox, fn) {
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${flushGhBin(sandbox)}${path.delimiter}${previousPath}`;
+  try {
+    return fn(sandbox);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+}
+
 const openWorkItemArgs = {
   title: "Demo item",
   type: "feature",
@@ -311,22 +380,176 @@ test("open_work_item validates input before creating the GitHub Issue", () => {
   });
 });
 
-test("open_work_item auto-closes the created Issue when initialization fails midway", () => {
-  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-rollback-"));
+test("open_work_item creates locally with zero gh calls while GitHub is unreachable", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-offline-open-"));
   const root = gitRepository();
-  withFakeGh(sandbox, () => {
-    process.env.FAKE_GH_FAIL_ON = "2"; // 第 2 次调用 = issue edit 标题重命名
-    try {
-      assert.throws(
-        () => callTool("hulane_open_work_item", openWorkItemArgs, { cwd: root }),
-        (error) => /Issue was created at /.test(error.message) && /auto-closed/.test(error.message),
-      );
-    } finally {
-      delete process.env.FAKE_GH_FAIL_ON;
+  withOfflineGh(sandbox, () => {
+    const result = callTool("hulane_open_work_item", openWorkItemArgs, { cwd: root });
+    assert.equal(result.item.status, "waiting_approval");
+    assert.equal(result.item.id, "REQ-1"); // 空 store,本地号从 1 起
+    assert.equal(result.item.issue_pending, true);
+    assert.equal(result.item.issue_number, null);
+    assert.equal(result.item.github_issue_url, null);
+    assert.equal(result.item.planner_summary, "demo");
+    assert.deepEqual(result.item.acceptance_criteria, ["demo criterion"]);
+    assert.deepEqual(result.github, { skipped: "issue_pending", id: "REQ-1", issue_number: null, label: null, revision: 1 });
+    // 断网开单:全程零 gh 调用(垫片日志缺失),也不再有孤儿回滚
+    assert.equal(fs.existsSync(path.join(sandbox, "gh-calls.log")), false);
+    const projection = fs.readFileSync(result.projection_file, "utf8");
+    assert.match(projection, /issue_pending: true/);
+    assert.match(projection, /Issue 待补建（flush）/);
+  });
+});
+
+test("local numbering merges REQ and BUG prefixes and never collides", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-local-number-"));
+  const root = gitRepository();
+  const req9 = createWorkItem({ id: "REQ-9", issue_number: 9, title: "Nine", risk_level: "low", delivery_required: false, delivery_reason: "docs", skip_allowed: true });
+  const bug8 = createWorkItem({ id: "BUG-8", issue_number: 8, title: "Eight", risk_level: "low", delivery_required: false, delivery_reason: "docs", skip_allowed: true });
+  writeStore(root, { schema_version: 2, repository: "example/org", revision: 0, updated_at: new Date().toISOString(), items: { [req9.id]: req9, [bug8.id]: bug8 } });
+  withOfflineGh(sandbox, () => {
+    const feature = callTool("hulane_open_work_item", { ...openWorkItemArgs, type: "feature" }, { cwd: root });
+    assert.equal(feature.item.id, "REQ-10"); // REQ-9 + BUG-8 合并取最大 9 + 1
+    const bug = callTool("hulane_open_work_item", { ...openWorkItemArgs, type: "bug" }, { cwd: root });
+    assert.equal(bug.item.id, "BUG-11"); // REQ-10 已入 store,下一号 11
+  });
+});
+
+test("pending transitions flow offline with unified sync degradation", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-offline-flow-"));
+  const root = gitRepository();
+  withOfflineGh(sandbox, () => {
+    callTool("hulane_open_work_item", { ...openWorkItemArgs, risk_level: "medium", size: "standard", spec_sync_required: false }, { cwd: root });
+    const approve = callTool("hulane_transition", {
+      id: "REQ-1", event: "approve_requirement", actor: "orchestrator",
+      evidence: "user asked offline", patch: { approval_source: "auto_intake" },
+    }, { cwd: root });
+    assert.equal(approve.item.status, "ready");
+    assert.equal(approve.github.skipped, "issue_pending");
+    // start_planning 走专用工具,同样离线成功
+    const worktree = callTool("hulane_worktree_create", {
+      id: "REQ-1", actor: "orchestrator", evidence: "offline worktree", base: "HEAD",
+    }, { cwd: root });
+    assert.equal(worktree.item.status, "planning");
+    assert.equal(worktree.github.skipped, "issue_pending");
+    const transitions = [
+      { event: "plan_complete", actor: "orchestrator" },
+      { event: "code_complete", actor: "orchestrator" },
+      { event: "tests_passed", actor: "orchestrator" },
+      { event: "review_approved", actor: "orchestrator" },
+    ];
+    for (const step of transitions) {
+      const result = callTool("hulane_transition", {
+        id: "REQ-1", event: step.event, actor: step.actor,
+        evidence: `${step.event} offline evidence`,
+      }, { cwd: root });
+      assert.equal(result.item.issue_pending, true);
+      assert.equal(result.github.skipped, "issue_pending");
     }
+    const status = callTool("hulane_status", { id: "REQ-1", refresh_from_github: true }, { cwd: root });
+    // remote-truth-wins 尊重 pending:刷新退化为只读本地,本地未动、零 gh
+    assert.equal(status.item.status, "pr_open");
+    assert.equal(status.item.issue_pending, true);
+    assert.equal(status.facts, null);
+    assert.equal(fs.existsSync(path.join(sandbox, "gh-calls.log")), false);
+    // pr_created 对 pending 抛错:PR 必须挂在已补建的真实 Issue 上
+    assert.throws(
+      () => callTool("hulane_transition", {
+        id: "REQ-1", event: "pr_created", actor: "orchestrator",
+        evidence: "forged", patch: { pr_number: 5, github_pr_url: "https://github.com/example/org/pull/5" },
+      }, { cwd: root }),
+      /run hulane_flush first/,
+    );
+  });
+});
+
+test("issue_created is reserved for the flush tool", () => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hulane-reserved-"));
+  const root = gitRepository();
+  withOfflineGh(sandbox, () => {
+    callTool("hulane_open_work_item", openWorkItemArgs, { cwd: root });
+    assert.throws(() => callTool("hulane_transition", {
+      id: "REQ-1",
+      event: "issue_created",
+      actor: "orchestrator",
+      evidence: "forged backfill",
+      patch: { issue_number: 1, github_issue_url: "https://github.com/example/org/issues/1" },
+      sync: false,
+    }, { cwd: root }), /reserved/);
+  });
+});
+
+function flushSandbox(prefix) {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = gitRepository();
+  const item = createWorkItem({
+    id: "REQ-9",
+    issue_pending: true,
+    title: "Demo item",
+    risk_level: "low",
+    size: "small",
+    delivery_required: false,
+    delivery_reason: "batched release",
+    skip_allowed: true,
+    spec_sync_required: false,
+    planner_summary: "demo",
+    acceptance_criteria: ["demo criterion"],
+  });
+  writeStore(root, { schema_version: 2, repository: "example/org", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
+  return { sandbox, root, item };
+}
+
+const flushArgs = { id: "REQ-9", actor: "orchestrator", evidence: "online window: Issue created and backfilled" };
+
+test("hulane_flush creates, backfills, and syncs the final state in one window", () => {
+  const { sandbox, root } = flushSandbox("hulane-flush-");
+  withFlushGh(sandbox, () => {
+    const result = callTool("hulane_flush", flushArgs, { cwd: root });
+    assert.equal(result.issue_number, 99);
+    assert.equal(result.issue_url, "https://github.com/example/org/issues/99");
+    assert.equal(result.reused_existing_issue, false);
+    assert.equal(result.item.issue_pending, false);
+    assert.equal(result.item.issue_number, 99);
+    assert.equal(result.item.github_issue_url, "https://github.com/example/org/issues/99");
+    assert.equal(result.item.status, "waiting_approval"); // 自环不改状态
+    assert.equal(result.item.history.at(-1).event, "issue_created");
+    assert.equal(result.github.label, "hulane:waiting-approval");
     const calls = fs.readFileSync(path.join(sandbox, "gh-calls.log"), "utf8");
-    assert.match(calls, /issue create/);
-    assert.match(calls, /issue edit/);
-    assert.match(calls, /issue close/); // 兜底回滚关掉了刚建的 Issue
+    assert.match(calls, /issue list [^]*REQ-9 in:title/); // 幂等预查先行
+    const lines = calls.split("\n");
+    const createIndex = lines.findIndex((line) => line.startsWith("issue create"));
+    assert.ok(createIndex >= 0, "flush must create the Issue");
+    assert.equal(lines.filter((line) => line.startsWith("issue create")).length, 1); // 补建恰好一次
+    assert.match(lines[createIndex], /REQ-9 Demo item/); // 标题直接落 <ID> <title>
+    // body 参数跨多行:截到下一条 gh 命令前,断言正文由持久化验收标准重建
+    const nextCommand = lines.findIndex((line, index) => index > createIndex && /^(issue|label|api) /.test(line));
+    const createBlock = lines.slice(createIndex, nextCommand === -1 ? undefined : nextCommand).join("\n");
+    assert.match(createBlock, /demo criterion/);
+    assert.match(createBlock, /Planner summary/);
+    assert.match(calls, /--add-label hulane:waiting-approval/); // 最终标签一次到位
+    assert.match(calls, /cmdb-dev-state:v2/); // 全量状态注释随一次 sync 发布
+    // 注释携带最终 revision(created=1 + issue_created=2),hydrate 可取回等 revision 状态
+    assert.match(calls, /"revision": 2/);
+    // flush 后非 pending:再次 flush 引导改走 hulane_sync
+    assert.throws(() => callTool("hulane_flush", flushArgs, { cwd: root }), /no pending GitHub Issue/);
+  });
+});
+
+test("hulane_flush is idempotent: precheck hit reuses the existing Issue", () => {
+  const { sandbox, root } = flushSandbox("hulane-flush-idem-");
+  // 模拟 flush 中途断线:Issue 已建(远端存在)但本地回填未落,重跑 flush 复用
+  fs.writeFileSync(
+    path.join(sandbox, "gh-issues.json"),
+    `${JSON.stringify([{ number: 77, title: "REQ-9 Demo item", url: "https://github.com/example/org/issues/77" }])}\n`,
+  );
+  withFlushGh(sandbox, () => {
+    const result = callTool("hulane_flush", flushArgs, { cwd: root });
+    assert.equal(result.reused_existing_issue, true);
+    assert.equal(result.issue_number, 77);
+    assert.equal(result.item.issue_number, 77);
+    assert.equal(result.item.issue_pending, false);
+    const calls = fs.readFileSync(path.join(sandbox, "gh-calls.log"), "utf8");
+    assert.equal(calls.split("\n").filter((line) => line.includes("issue create")).length, 0); // 绝不重复建
+    assert.match(calls, /issue edit 77 [^]*--title REQ-9 Demo item/); // 复用路径标题落位
   });
 });

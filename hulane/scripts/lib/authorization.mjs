@@ -47,6 +47,14 @@ function assertActionState(item, action) {
   if (!REQUIRED_STATE[action].includes(item.status)) {
     throw new Error(`${action} is forbidden while ${item.id} is ${item.status}`);
   }
+  // 离线韧性:pending 工单(Issue 未补建)不允许关单/合并——目标对象尚不存在,
+  // 必须先经 hulane_flush 在线窗口补建回填(token 路径与状态自证路径共用本断言)
+  if (action === "issue-close" && item.issue_pending === true) {
+    throw new Error("issue close requires the GitHub Issue to exist; run hulane_flush first");
+  }
+  if (action === "pr-merge" && item.issue_pending === true) {
+    throw new Error("PR merge requires the GitHub Issue to exist; run hulane_flush first");
+  }
   if (action === "pr-merge" && (item.pr_checks !== "passed" || !mergeGuardSatisfied(item))) {
     throw new Error("PR merge requires passed checks and a verified merge guard");
   }

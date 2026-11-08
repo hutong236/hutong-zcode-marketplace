@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEvent, createWorkItem, normalizeWorkItem, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, nextLocalWorkItemNumber, normalizeWorkItem, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
 
 const sha = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
@@ -596,4 +596,156 @@ test("validateWorkItemInput rejects every cross-field violation before an Issue 
   assert.equal(standard.deliveryRequired, true);
   assert.equal(standard.skipAllowed, false);
   assert.equal(standard.specSyncRequired, true);
+});
+
+// ===== REQ-11:本地优先开单、issue_created 自环与 pending 不变量 =====
+
+function pendingItem(overrides = {}) {
+  return createWorkItem({
+    id: "REQ-40",
+    issue_pending: true,
+    title: "Offline item",
+    risk_level: "low",
+    delivery_required: false,
+    delivery_reason: "batched release",
+    skip_allowed: true,
+    planner_summary: "offline plan",
+    acceptance_criteria: ["offline criterion"],
+    ...overrides,
+  }, clock);
+}
+
+test("local-first creation persists pending identity, planner summary, and criteria", () => {
+  const item = pendingItem();
+  assert.equal(item.status, "waiting_approval");
+  assert.equal(item.issue_pending, true);
+  assert.equal(item.issue_number, null);
+  assert.equal(item.github_issue_url, null);
+  assert.equal(item.issue_state, "open");
+  assert.equal(item.planner_summary, "offline plan");
+  assert.deepEqual(item.acceptance_criteria, ["offline criterion"]);
+  assert.equal(validateWorkItem(item), true);
+  assert.equal(item.history[0].evidence, "Local Work Item REQ-40 created offline; GitHub Issue pending flush");
+  // 在线先建 Issue 的旧通道不变:issue_number 必填且与 id 数字一致
+  const online = createWorkItem({ id: "REQ-41", issue_number: 41, title: "Online item", risk_level: "low", delivery_required: true }, clock);
+  assert.equal(online.issue_pending, false);
+  assert.throws(
+    () => createWorkItem({ id: "REQ-42", issue_number: 43, title: "Mismatch", risk_level: "low", delivery_required: true }, clock),
+    /id number must equal issue_number/,
+  );
+  assert.throws(
+    () => createWorkItem({ id: "REQ-42", issue_pending: true, issue_number: 43, title: "Bad", risk_level: "low", delivery_required: true }, clock),
+    /without an issue_number/,
+  );
+});
+
+test("local numbering merges REQ and BUG prefixes", () => {
+  assert.equal(nextLocalWorkItemNumber({ items: {} }), 1);
+  const store = {
+    items: {
+      "REQ-9": { id: "REQ-9" },
+      "BUG-8": { id: "BUG-8" },
+    },
+  };
+  assert.equal(nextLocalWorkItemNumber(store), 10); // REQ-9 + BUG-8 合并取最大 9
+  store.items["REQ-10"] = { id: "REQ-10" };
+  assert.equal(nextLocalWorkItemNumber(store), 11);
+});
+
+test("issue_created self-loop backfills pending items without touching status", () => {
+  const item = pendingItem();
+  const before = { status: item.status, next_action: item.next_action };
+  const backfilled = move(item, "issue_created", {
+    issue_number: 77,
+    github_issue_url: "https://github.com/acme/demo/issues/77",
+  });
+  assert.equal(backfilled.status, before.status); // 自环不改状态
+  assert.equal(backfilled.next_action, before.next_action);
+  assert.equal(backfilled.issue_pending, false);
+  assert.equal(backfilled.issue_number, 77); // 本地号 REQ-40 与远端 Issue #77 解耦
+  assert.equal(backfilled.github_issue_url, "https://github.com/acme/demo/issues/77");
+  assert.equal(backfilled.history.at(-1).event, "issue_created");
+  assert.equal(validateWorkItem(backfilled), true);
+  // 非 pending 重复应用抛错、状态不变
+  assert.throws(() => move(backfilled, "issue_created", { issue_number: 78, github_issue_url: "https://github.com/acme/demo/issues/78" }), /applies only to issue_pending/);
+  assert.equal(backfilled.issue_number, 77);
+});
+
+test("issue_created patch requires a positive issue_number and a github.com URL", () => {
+  const item = pendingItem();
+  assert.throws(() => move(item, "issue_created", { github_issue_url: "https://github.com/acme/demo/issues/77" }), /positive issue_number/);
+  assert.throws(() => move(item, "issue_created", { issue_number: 0, github_issue_url: "https://github.com/acme/demo/issues/77" }), /positive issue_number/);
+  assert.throws(() => move(item, "issue_created", { issue_number: 77 }), /github\.com Issue URL/);
+  assert.throws(() => move(item, "issue_created", { issue_number: 77, github_issue_url: "https://example.test/issues/77" }), /github\.com Issue URL/);
+});
+
+test("only issue_created may write issue_number/issue_pending through a patch", () => {
+  const item = pendingItem();
+  assert.throws(
+    () => move(item, "approve_requirement", { issue_number: 77, github_issue_url: "https://github.com/acme/demo/issues/77" }, "human:owner"),
+    /only the issue_created event may set it/,
+  );
+  assert.throws(
+    () => move(item, "approve_requirement", { issue_pending: false }, "human:owner"),
+    /only the issue_created event may set it/,
+  );
+  // flush 之外的事件(含保留事件specs_synced)同样不得伪造回填
+  const base = { ...waitingCloseItem(), issue_pending: true, issue_number: null, github_issue_url: null };
+  assert.throws(
+    () => move(base, "specs_synced", { ...specSyncPatch, issue_number: 77 }),
+    /only the issue_created event may set it/,
+  );
+});
+
+test("pending items cannot close, reach done, or open a PR", () => {
+  const base = { ...waitingCloseItem(), issue_pending: true, issue_number: null, github_issue_url: null };
+  assert.throws(() => move(base, "issue_closed"), /run hulane_flush first/);
+  assert.throws(
+    () => validateWorkItem({ ...base, status: "done", issue_state: "closed" }),
+    /done requires the flushed GitHub Issue/,
+  );
+  const atReview = { ...pendingItem(), status: "review", human_approval: "approved", tester_result: "passed" };
+  assert.throws(
+    () => move(atReview, "pr_created", { pr_number: 5, github_pr_url: "https://github.com/acme/demo/pull/5" }),
+    /run hulane_flush first/,
+  );
+});
+
+test("pending invariants are enforced by validateWorkItem", () => {
+  const item = pendingItem();
+  assert.throws(() => validateWorkItem({ ...item, issue_number: 77 }), /issue_pending requires a null issue_number/);
+  assert.throws(
+    () => validateWorkItem({ ...item, github_issue_url: "https://github.com/acme/demo/issues/77" }),
+    /issue_pending requires a null github_issue_url/,
+  );
+  assert.throws(() => validateWorkItem({ ...item, issue_state: "closed" }), /issue_pending requires an open Issue state/);
+  assert.throws(() => validateWorkItem({ ...item, issue_pending: "yes" }), /invalid issue_pending/);
+  assert.throws(() => validateWorkItem({ ...item, issue_pending: false }), /invalid issue_number/);
+});
+
+test("legacy items normalize issue_pending to false and keep flowing unchanged", () => {
+  const legacy = waitingCloseItem({ spec_sync_required: false });
+  delete legacy.issue_pending;
+  const normalized = normalizeWorkItem(legacy);
+  assert.equal(normalized.issue_pending, false);
+  const done = move(normalized, "issue_closed");
+  assert.equal(done.status, "done");
+  assert.equal(validateWorkItem(done), true);
+});
+
+test("pending items transition through the whole lifecycle offline", () => {
+  let item = pendingItem({ risk_level: "medium" });
+  item = move(item, "approve_requirement", { approval_source: "auto_intake" });
+  item = move(item, "start_planning", { branch: "hulane/req-40", worktree_path: "/repo/.hulane/worktrees/REQ-40" });
+  item = move(item, "plan_complete");
+  item = move(item, "code_complete");
+  item = move(item, "tests_passed");
+  item = move(item, "review_approved");
+  assert.equal(item.status, "pr_open");
+  assert.equal(item.issue_pending, true);
+  // flush 后 PR 才可能创建:回填 → pr_created 放行
+  item = move(item, "issue_created", { issue_number: 88, github_issue_url: "https://github.com/acme/demo/issues/88" });
+  item = move(item, "pr_created", { pr_number: 40, github_pr_url: "https://github.com/acme/demo/pull/40" });
+  assert.equal(item.status, "pr_checking");
+  assert.equal(validateWorkItem(item), true);
 });

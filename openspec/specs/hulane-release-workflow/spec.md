@@ -8,7 +8,7 @@
 
 ### Requirement: Gate A 预授权同轮放行
 
-开单完成后,编排者 SHALL 在同轮应用 approve_requirement 使工单直达 ready,不在 waiting_approval 停等:默认以 actor="orchestrator"、patch.approval_source="auto_intake" 应用,evidence SHALL 引用用户本轮原话;用户原话含明确批准措辞(如「直接做」「预授权」)时 SHALL 改用 patch.approval_source="pre_authorized" 且 actor 为 human:<身份> 形式。无论走哪条同轮通道,编排者 SHALL 把审批包(需求、方案、页面设计含评分历史、spec delta 全文或摘要+路径)作为一条 GitHub Issue 评论发布留痕,自动放行不豁免该评论。/hulane_approve SHALL 保留为人工覆盖通道(approval_source="issue_stop" 语义不变)。仅白名单停等情形 SHALL 维持 STOP:① risk_level=high;② Planner 报告需求歧义或 scope_questions 未闭合;③ 用户明说「等我确认」等显式暂停。spec_sync_required=true SHALL 不再构成停等理由。
+开单完成后,编排者 SHALL 在同轮应用 approve_requirement 使工单直达 ready,不在 waiting_approval 停等:默认以 actor="orchestrator"、patch.approval_source="auto_intake" 应用,evidence SHALL 引用用户本轮原话;用户原话含明确批准措辞(如「直接做」「预授权」)时 SHALL 改用 patch.approval_source="pre_authorized" 且 actor 为 human:<身份> 形式。无论走哪条同轮通道,编排者 SHALL 把审批包(需求、方案、页面设计含评分历史、spec delta 全文或摘要+路径)作为一条 GitHub Issue 评论发布留痕,自动放行不豁免该评论。仅离线开单(REQ-11:issue_pending=true、GitHub Issue 尚未补建)时该审批包评论发布义务 SHALL 展期至 flush 在线窗口,在 hulane_flush 补建 Issue 后、issue_closed 前发布;在线开单行为不变。/hulane_approve SHALL 保留为人工覆盖通道(approval_source="issue_stop" 语义不变)。仅白名单停等情形 SHALL 维持 STOP:① risk_level=high;② Planner 报告需求歧义或 scope_questions 未闭合;③ 用户明说「等我确认」等显式暂停。spec_sync_required=true SHALL 不再构成停等理由。
 
 #### Scenario: 开单默认同轮自动放行
 - WHEN 开单完成且不落在任何白名单停等情形
@@ -21,6 +21,10 @@
 #### Scenario: 规格工单不再停等
 - WHEN spec_sync_required=true 的 standard 工单开单完成且不落在白名单停等情形
 - THEN Gate A 同轮自动放行,spec delta 随审批包评论留痕,不因规格同步要求停等
+
+#### Scenario: 离线开单评论展期至 flush 窗口
+- WHEN 工单离线开单(issue_pending=true、GitHub Issue 尚未补建)且不落在白名单停等情形
+- THEN Gate A 同轮自动放行照常生效,审批包评论发布义务展期至 hulane_flush 在线窗口,在 Issue 补建后、issue_closed 前完成留痕;在线开单的既有评论时序不变
 
 #### Scenario: 存量工单与既有通道不受影响
 - WHEN 存量 waiting_approval 工单继续走 /hulane_approve,或缺 approval_source 字段的存量工单经 normalizeWorkItem 读取

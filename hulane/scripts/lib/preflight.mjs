@@ -84,10 +84,18 @@ export function runPreflight(root) {
   const status = run("git", ["status", "--porcelain"], root);
   add("git_status", status.ok, status.output || "clean", "Resolve unreadable Git state");
 
-  const critical = ["git", "origin", "gh", "gh_auth", "github_repository", "pr_checks_workflow", "merge_guard", "image_delivery"];
-  const failed = checks.filter((check) => critical.includes(check.name) && check.result === "FAIL");
+  // 最小离线容忍(REQ-11):GitHub 依赖检查归入 online_required 分组——离线时
+  // 不再判 NOT_READY,只压低整体就绪度;本地硬项(git/origin/workflow 文件/
+  // 镜像 workflow)仍决定 offline_open_ready,断网也可本地开单流转
+  const onlineRequired = new Set(["gh", "gh_auth", "github_repository", "required_server_check", "merge_guard"]);
+  for (const check of checks) check.group = onlineRequired.has(check.name) ? "online_required" : "local";
+  const localCritical = ["git", "origin", "pr_checks_workflow", "image_delivery"];
+  const failedLocal = checks.filter((check) => localCritical.includes(check.name) && check.result === "FAIL");
+  const failedOnline = checks.filter((check) => onlineRequired.has(check.name) && check.result === "FAIL");
   return {
-    readiness: failed.length ? "NOT_READY" : (status.output ? "READY_WITH_WARNINGS" : "READY"),
+    readiness: failedLocal.length ? "NOT_READY" : ((status.output || failedOnline.length) ? "READY_WITH_WARNINGS" : "READY"),
+    offline_open_ready: failedLocal.length === 0,
+    online_required: { ready: failedOnline.length === 0, failed: failedOnline.map((check) => check.name) },
     repository,
     default_branch: defaultBranch,
     private_repository: isPrivate,
