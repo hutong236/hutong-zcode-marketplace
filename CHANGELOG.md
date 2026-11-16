@@ -3,6 +3,22 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- 文案级小单快速通道（REQ-12）：`hulane/skills/hulane-development/SKILL.md` 新增
+  copy-level fast lane——small 工单满足零逻辑变化（不改控制流/函数签名/状态/数据/
+  权限/构建配置）、改动 ≤10 行、不触碰流程关键文件（`hulane/mcp/`、`hulane/hooks/`、
+  `hulane/schemas/`、`hulane/agents/`、`hulane/skills/`、`hulane/commands/`、
+  `openspec/`、`.github/workflows/`）时，编排者可直改替代派发 `hulane-coder`
+  （审计证据如实记 `orchestrator=self-implemented (copy-level fast lane)`，
+  Gate A 审批包须声明走通道）；Tester+Reviewer 合并为单个合并验证员（默认
+  `hulane-tester` 扩展评审职责，一轮回报测试+评审两方面结论），返工上限 3 轮不变；
+  膨胀熔断：触逻辑/超行数/需改流程文件立即转派 Coder 走完整纪律。标准单双门派发
+  规则不变；状态机/守卫/schema 零改动。背景：CMDB REQ-326 文案单实测 17 分钟，
+  Coder 子代理与双重验证占约 9 分钟而实际编辑秒级。
+
 ## [3.10.0] - 2026-11-08
 
 ### Added
