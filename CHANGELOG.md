@@ -3,6 +3,19 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
+## [3.12.0] - 2026-11-19
+
+### Added
+
+- 设计环节界面文案克制原则（REQ-13）：`hulane/agents/hulane-designer.md` 的
+  Design constraints (hard) 段新增 copy discipline 硬约束——不给单个功能配辅助
+  标签或解释段落，布局、图标与交互自解释（用户凭视觉层次理解功能）；一级标题
+  已明确名称的区域不再重复引导性说明文字；精力聚焦 UI 美观与交互流畅，不产出
+  说明书式界面；目标风格=简洁现代、信息密度适中、留白合理、功能凭位置与图标
+  即可辨识。`hulane-design-critic` 评审口径已有 over-explaining 惩罚钩子，
+  评估回环天然强制该原则，故 critic 零改动；design_spec「文案要点」与 HTML
+  原型自此默认遵循。
+
 ## [3.11.0] - 2026-11-16
 
 ### Added
