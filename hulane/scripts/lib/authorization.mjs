@@ -23,8 +23,15 @@ const REQUIRED_STATE = Object.freeze({
   "git-push": ["pr_open", "building"],
   "git-tag": ["building"],
   "pr-merge": ["merging"],
-  "issue-close": ["waiting_close"],
+  // abandoned 关单(not planned)与 waiting_close 常规关单(Done)共用 issue-close,
+  // 区分由 not planned reason 规则在 assertExecutionScope 强制
+  "issue-close": ["waiting_close", "abandoned"],
 });
+
+// `gh issue close <n> --reason "not planned"` 的形态识别:引号可有可无
+function closeCarriesNotPlannedReason(command) {
+  return /(?:^|\s)--reason(?:=|\s+)["']?not planned["']?(?:\s|$)/.test(String(command));
+}
 
 function authorizationDirectory(root) {
   return path.join(resolveControlDir(root), "authorizations");
@@ -60,8 +67,9 @@ function assertActionState(item, action) {
   }
   if (action === "pr-merge" && !Number.isInteger(item.pr_number)) throw new Error("PR merge requires a recorded pr_number");
   // 规格层前置(双层强制的授权层侧):token 路径与状态自证路径共用本断言,
-  // spec_sync_required 且未记录 specs_synced 的工单不允许关闭 Issue
-  if (action === "issue-close" && item.spec_sync_required && item.specs_synced !== true) {
+  // spec_sync_required 且未记录 specs_synced 的工单不允许关闭 Issue。
+  // 仅适用 waiting_close 的常规关单:abandoned 作废关单没有合并树可验 specs
+  if (action === "issue-close" && item.status === "waiting_close" && item.spec_sync_required && item.specs_synced !== true) {
     throw new Error("issue close requires recorded specs_synced evidence while spec_sync_required; call hulane_record_specs_synced first");
   }
   if (action === "git-tag" && item.tag_confirmation !== "approved") throw new Error("git tag requires Gate C approval");
@@ -139,8 +147,20 @@ function assertExecutionScope(root, item, action, cwd, command) {
   if (action === "pr-merge" && !new RegExp(`--match-head-commit(?:=|\\s+)${item.pr_head_sha}(?:\\s|$)`).test(String(command))) {
     throw new Error(`PR merge command must pin verified head SHA ${item.pr_head_sha}`);
   }
-  if (action === "issue-close" && !commandHasNumber(String(command), item.issue_number)) {
-    throw new Error(`Issue close command must name Issue ${item.issue_number}`);
+  if (action === "issue-close") {
+    // not planned reason 规则(REQ-14,token 路径与状态自证路径共用):
+    // abandoned 作废关单必须携带 `--reason "not planned"`,
+    // waiting_close 常规关单(Done)必须不携带——两种终态不得混淆
+    const notPlanned = closeCarriesNotPlannedReason(command);
+    if (item.status === "abandoned" && !notPlanned) {
+      throw new Error('Issue close from abandoned requires --reason "not planned"');
+    }
+    if (item.status === "waiting_close" && notPlanned) {
+      throw new Error('Issue close from waiting_close must not carry --reason "not planned" (that form is reserved for abandoned items)');
+    }
+    if (!commandHasNumber(String(command), item.issue_number)) {
+      throw new Error(`Issue close command must name Issue ${item.issue_number}`);
+    }
   }
 }
 
@@ -323,9 +343,10 @@ export function consumeReleaseAuthorization(root, { token, action, cwd, command 
   return authorization;
 }
 
-// issue-close / pr-merge 允许无令牌的状态自证:状态机到达 waiting_close / merging
-// 之前已完成全部证据校验,当前状态本身就是授权。复用令牌消费的同一套
-// assertActionState + assertExecutionScope;操作成功后状态离开目标态,重放即被拒。
+// issue-close / pr-merge 允许无令牌的状态自证:状态机到达 waiting_close / merging /
+// abandoned 之前已完成全部(或作废场景下人工确认的)校验,当前状态本身就是授权。
+// 复用令牌消费的同一套 assertActionState + assertExecutionScope;操作成功后状态
+// 离开目标态(abandoned 的 issue_closed 是自环、issue 已关不可重关),重放即被拒。
 export const STATE_VERIFIED_ACTIONS = Object.freeze(["issue-close", "pr-merge"]);
 
 function actionTargetNumber(action, command) {

@@ -40,7 +40,7 @@
       "enum": [
         "waiting_approval", "ready", "planning", "doing", "testing", "review",
         "pr_open", "pr_checking", "waiting_human_merge", "merging",
-        "waiting_tag_confirm", "building", "waiting_close", "blocked", "done"
+        "waiting_tag_confirm", "building", "waiting_close", "blocked", "done", "abandoned"
       ]
     },
     "risk_level": { "enum": ["low", "medium", "high"] },
@@ -78,8 +78,12 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "delivery_required": { "const": true } } },
+      "if": { "properties": { "delivery_required": { "const": true } }, "required": ["delivery_required"] },
       "then": { "properties": { "skip_allowed": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "delivery_required": { "const": false } }, "required": ["delivery_required"] },
+      "then": { "properties": { "skip_allowed": { "const": true } } }
     },
     {
       "if": { "properties": { "issue_pending": { "const": true } }, "required": ["issue_pending"] },

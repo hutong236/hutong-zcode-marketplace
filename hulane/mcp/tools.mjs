@@ -57,7 +57,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   },
   {
     name: "hulane_transition",
-    description: "Apply one evidence-bearing state-machine event, update projection, and normally sync the GitHub Issue.",
+    description: "Apply one evidence-bearing state-machine event, update projection, and normally sync the GitHub Issue. The abandon event (terminal abandoned state) is human-gated here: its actor must be human:<identity> — the state machine rejects an orchestrator actor — and its evidence must state the abandonment reason; the follow-up Issue close uses `gh issue close <n> --reason \"not planned\"`.",
     inputSchema: objectSchema({
       id, event: text, actor: text, evidence: text, patch: { type: "object", additionalProperties: true }, to: { type: "string" },
       sync: { type: "boolean", default: true }, repository: { type: "string" },

@@ -1,5 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { applyEvent, createWorkItem, nextLocalWorkItemNumber, normalizeWorkItem, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
 
 const sha = "a".repeat(40);
@@ -582,19 +587,20 @@ test("validateWorkItemInput rejects every cross-field violation before an Issue 
     () => validateWorkItemInput({ ...base, size: "nano" }),
     /size must be one of/,
   );
+  // REQ-14 互补不变量:true+true 仍拒(消息升级为互补表述)
   assert.throws(
     () => validateWorkItemInput({ ...base, delivery_required: true, delivery_reason: null }),
-    /Runtime delivery cannot allow skip/,
+    /complementary: delivery_required XOR skip_allowed/,
   );
   assert.throws(
     () => validateWorkItemInput({ ...base, spec_sync_required: true }),
     /size small never requires spec sync/,
   );
-  // standard 默认值派生：spec_sync 默认必须、发版默认运行时
-  const standard = validateWorkItemInput({ title: "Demo", risk_level: "high" });
+  // standard 默认值派生：spec_sync 默认必须、发版缺省对齐文档(REQ-14 翻转为 false+true)
+  const standard = validateWorkItemInput({ title: "Demo", risk_level: "high", delivery_reason: "docs" });
   assert.equal(standard.size, "standard");
-  assert.equal(standard.deliveryRequired, true);
-  assert.equal(standard.skipAllowed, false);
+  assert.equal(standard.deliveryRequired, false);
+  assert.equal(standard.skipAllowed, true);
   assert.equal(standard.specSyncRequired, true);
 });
 
@@ -627,14 +633,14 @@ test("local-first creation persists pending identity, planner summary, and crite
   assert.equal(validateWorkItem(item), true);
   assert.equal(item.history[0].evidence, "Local Work Item REQ-40 created offline; GitHub Issue pending flush");
   // 在线先建 Issue 的旧通道不变:issue_number 必填且与 id 数字一致
-  const online = createWorkItem({ id: "REQ-41", issue_number: 41, title: "Online item", risk_level: "low", delivery_required: true }, clock);
+  const online = createWorkItem({ id: "REQ-41", issue_number: 41, title: "Online item", risk_level: "low", delivery_required: true, skip_allowed: false }, clock);
   assert.equal(online.issue_pending, false);
   assert.throws(
-    () => createWorkItem({ id: "REQ-42", issue_number: 43, title: "Mismatch", risk_level: "low", delivery_required: true }, clock),
+    () => createWorkItem({ id: "REQ-42", issue_number: 43, title: "Mismatch", risk_level: "low", delivery_required: true, skip_allowed: false }, clock),
     /id number must equal issue_number/,
   );
   assert.throws(
-    () => createWorkItem({ id: "REQ-42", issue_pending: true, issue_number: 43, title: "Bad", risk_level: "low", delivery_required: true }, clock),
+    () => createWorkItem({ id: "REQ-42", issue_pending: true, issue_number: 43, title: "Bad", risk_level: "low", delivery_required: true, skip_allowed: false }, clock),
     /without an issue_number/,
   );
 });
@@ -748,4 +754,139 @@ test("pending items transition through the whole lifecycle offline", () => {
   item = move(item, "pr_created", { pr_number: 40, github_pr_url: "https://github.com/acme/demo/pull/40" });
   assert.equal(item.status, "pr_checking");
   assert.equal(validateWorkItem(item), true);
+});
+
+// ===== REQ-14:交付政策互补不变量 + 作废(abandoned)终态 =====
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("delivery policy flags must be complementary at intake and in persisted state (AC-1..AC-4)", () => {
+  // AC-1:false+false(即使 delivery_reason 齐全)一律拒绝
+  assert.throws(
+    () => validateWorkItemInput({ title: "Demo", risk_level: "low", delivery_required: false, delivery_reason: "docs", skip_allowed: false }),
+    /complementary: delivery_required XOR skip_allowed/,
+  );
+  // AC-2:true+true 拒绝回归保持
+  assert.throws(
+    () => validateWorkItemInput({ title: "Demo", risk_level: "low", delivery_required: true, skip_allowed: true }),
+    /complementary: delivery_required XOR skip_allowed/,
+  );
+  // AC-3:互补组合放行且策略照常持久化
+  const skipLane = validateWorkItemInput({ title: "Demo", risk_level: "low", delivery_required: false, delivery_reason: "docs", skip_allowed: true });
+  assert.equal(skipLane.deliveryRequired, false);
+  assert.equal(skipLane.skipAllowed, true);
+  const shipLane = validateWorkItemInput({ title: "Demo", risk_level: "low", delivery_required: true, skip_allowed: false });
+  assert.equal(shipLane.deliveryRequired, true);
+  assert.equal(shipLane.skipAllowed, false);
+  const persisted = createWorkItem({
+    id: "REQ-50",
+    issue_number: 50,
+    title: "Persisted policy",
+    risk_level: "low",
+    delivery_required: false,
+    delivery_reason: "docs",
+    skip_allowed: true,
+  }, clock);
+  assert.equal(persisted.delivery_required, false);
+  assert.equal(persisted.skip_allowed, true);
+  // AC-4:持久化不变量同步收紧(validateWorkItem 层)
+  assert.throws(() => validateWorkItem({ ...persisted, skip_allowed: false }), /invalid delivery policy/);
+  assert.throws(() => validateWorkItem({ ...persisted, delivery_required: true }), /invalid delivery policy/);
+});
+
+test("omitted delivery flags default to the documented false/true policy (AC-5)", () => {
+  const derived = validateWorkItemInput({ title: "Demo", risk_level: "low", delivery_reason: "docs" });
+  assert.equal(derived.deliveryRequired, false);
+  assert.equal(derived.skipAllowed, true);
+});
+
+test("the compatibility CLI defaults omitted flags to false/true (AC-5)", () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-cli-default-")));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const cli = path.join(repositoryRoot, "hulane", "scripts", "hulane-state.mjs");
+  const result = spawnSync(process.execPath, [cli, "new", "--title", "CliDefault", "--risk", "low", "--delivery-reason", "batched release"], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, HULANE_ENABLE_LEGACY_CLI: "1" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const item = JSON.parse(result.stdout);
+  assert.equal(item.delivery_required, false);
+  assert.equal(item.skip_allowed, true);
+  assert.equal(item.issue_pending, true);
+});
+
+test("abandon reaches the abandoned terminal from any non-terminal state with a human actor (AC-6)", () => {
+  for (const status of ["waiting_approval", "doing", "blocked", "waiting_tag_confirm"]) {
+    let item = runtimeItem({ risk_level: "medium" });
+    item = status === "blocked"
+      ? { ...item, status: "blocked", previous_status: "doing", blocked: true, block_reason: "stuck" }
+      : { ...item, status };
+    const abandoned = applyEvent(item, "abandon", { actor: "human:owner", evidence: "user cancelled: duplicate of REQ-2" }, clock);
+    assert.equal(abandoned.status, "abandoned", status);
+    assert.equal(abandoned.next_action, "none");
+    assert.equal(abandoned.history.at(-1).event, "abandon");
+    assert.equal(abandoned.history.at(-1).actor, "human:owner");
+    assert.equal(abandoned.history.at(-1).evidence, "user cancelled: duplicate of REQ-2");
+    // 零交付证据要求:tester/reviewer/merge/image/specs 全部未落也能通过校验
+    assert.equal(validateWorkItem(abandoned), true);
+  }
+});
+
+test("abandon rejects non-human actors and keeps the state unchanged (AC-7)", () => {
+  const item = runtimeItem();
+  assert.throws(() => move(item, "abandon"), /human:<identity>/);
+  assert.throws(() => move(item, "abandon", {}, "orchestrator"), /human:<identity>/);
+  assert.equal(item.status, "waiting_approval");
+  // abandon 也要求非空 evidence(全局前置)
+  assert.throws(
+    () => applyEvent(item, "abandon", { actor: "human:owner", evidence: " " }, clock),
+    /requires evidence/,
+  );
+});
+
+test("done and abandoned are closed under block and abandon; resume never targets abandoned (AC-8)", () => {
+  const done = move(move(waitingCloseItem(), "specs_synced", specSyncPatch), "issue_closed");
+  assert.equal(done.status, "done");
+  assert.throws(() => move(done, "abandon", {}, "human:owner"), /terminal and cannot be abandoned/);
+  assert.throws(() => move(done, "block"), /terminal and cannot be blocked/);
+
+  const abandoned = move(runtimeItem(), "abandon", {}, "human:owner");
+  assert.throws(() => move(abandoned, "abandon", {}, "human:owner"), /terminal and cannot be abandoned/);
+  assert.throws(() => move(abandoned, "block"), /terminal and cannot be blocked/);
+  assert.equal(abandoned.status, "abandoned");
+
+  // blocked 工单的恢复目标不可为终态 abandoned(与 done 同列不可恢复)
+  const fakeBlocked = { ...runtimeItem(), status: "blocked", previous_status: "abandoned", blocked: true, block_reason: "stuck" };
+  assert.throws(() => move(fakeBlocked, "resume", {}, "human:owner"), /no valid resumable previous state/);
+});
+
+test("issue_closed self-loops on abandoned and skips the spec gate (AC-11)", () => {
+  // spec_sync_required=true 且未记录 specs_synced:waiting_close 会拒,abandoned 不吃该门禁
+  let item = runtimeItem({ risk_level: "low" });
+  assert.equal(item.spec_sync_required, true);
+  item = move(item, "abandon", {}, "human:owner");
+  assert.equal(item.specs_synced, false);
+  assert.throws(() => move({ ...item, status: "waiting_close" }, "issue_closed"), /specs_synced/);
+  const closed = move(item, "issue_closed");
+  assert.equal(closed.status, "abandoned");
+  assert.equal(closed.issue_state, "closed");
+  assert.equal(closed.history.at(-1).event, "issue_closed");
+  assert.equal(validateWorkItem(closed), true);
+});
+
+test("pending items can be abandoned while issue_closed still requires flush (AC-12)", () => {
+  const abandoned = move(pendingItem(), "abandon", {}, "human:owner");
+  assert.equal(abandoned.status, "abandoned");
+  assert.equal(abandoned.issue_pending, true);
+  assert.equal(validateWorkItem(abandoned), true);
+  assert.throws(() => move(abandoned, "issue_closed"), /run hulane_flush first/);
+});
+
+test("abandoned items never enter the Done invariant branch", () => {
+  // done 的全部硬校验(tester/reviewer/merged_sha 等)不得适用于 abandoned
+  const abandoned = move(runtimeItem(), "abandon", {}, "human:owner");
+  assert.equal(abandoned.tester_result, "pending");
+  assert.equal(abandoned.merged_sha, null);
+  assert.equal(validateWorkItem(abandoned), true);
 });

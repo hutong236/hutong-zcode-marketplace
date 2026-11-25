@@ -24,6 +24,7 @@ test("GitHub state comment round-trips", () => {
     title: "Broken pagination",
     risk_level: "medium",
     delivery_required: true,
+    skip_allowed: false,
   });
   assert.deepEqual(parseGitHubState(serializeGitHubState(item)), item);
   assert.equal(stateLabel("waiting_tag_confirm"), "hulane:waiting-tag-confirm");
@@ -40,6 +41,7 @@ test("V1.2 state comments receive V1.3 isolation defaults", () => {
     title: "Legacy state",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   });
   delete legacy.worktree_path;
   delete legacy.rework_count;
@@ -52,7 +54,7 @@ test("V1.2 state comments receive V1.3 isolation defaults", () => {
 });
 
 test("sync rejects newer or divergent GitHub state revisions", () => {
-  const local = createWorkItem({ id: "REQ-9", issue_number: 9, title: "Sync", risk_level: "low", delivery_required: true });
+  const local = createWorkItem({ id: "REQ-9", issue_number: 9, title: "Sync", risk_level: "low", delivery_required: true, skip_allowed: false });
   assert.throws(() => assertRevisionCanSync(local, { ...local, revision: 2 }), /newer state revision/);
   assert.throws(() => assertRevisionCanSync(local, { ...local, title: "Divergent" }), /conflicts/);
   assert.equal(assertRevisionCanSync(local, structuredClone(local)), true);
@@ -60,7 +62,7 @@ test("sync rejects newer or divergent GitHub state revisions", () => {
 
 test("historical Done remains readable without fabricating V2 evidence", () => {
   const historical = {
-    ...createWorkItem({ id: "REQ-10", issue_number: 10, title: "Historical", risk_level: "low", delivery_required: true }),
+    ...createWorkItem({ id: "REQ-10", issue_number: 10, title: "Historical", risk_level: "low", delivery_required: true, skip_allowed: false }),
     status: "done",
     issue_state: "closed",
     human_approval: "approved",
@@ -117,7 +119,7 @@ const isMethod = (args, method) => args[0] === "api" && args[1] === "--method" &
 
 test("first sync takes the full path, posts the comment, and records meta", () => {
   const root = temporaryRoot();
-  const item = createWorkItem({ id: "REQ-21", issue_number: 21, title: "First sync", risk_level: "low", delivery_required: true });
+  const item = createWorkItem({ id: "REQ-21", issue_number: 21, title: "First sync", risk_level: "low", delivery_required: true, skip_allowed: false });
   const { calls, run } = fakeRun([
     (args) => (isCommentList(args) && !args.includes("--paginate") ? "[]" : undefined),
     (args) => (isCommentList(args) ? "[]" : undefined),
@@ -137,7 +139,7 @@ test("first sync takes the full path, posts the comment, and records meta", () =
 
 test("second sync uses the fast path with exactly the label edit and comment PATCH", () => {
   const root = temporaryRoot();
-  const item = createWorkItem({ id: "REQ-22", issue_number: 22, title: "Fast path", risk_level: "low", delivery_required: true });
+  const item = createWorkItem({ id: "REQ-22", issue_number: 22, title: "Fast path", risk_level: "low", delivery_required: true, skip_allowed: false });
   const ready = applyEvent(item, "approve_requirement", { actor: "human:tester", evidence: "approved" });
   seedMeta(root, ready.id, { comment_id: 424242, state_label: "hulane:waiting-approval" });
   const { calls, run } = fakeRun([
@@ -160,7 +162,7 @@ test("second sync uses the fast path with exactly the label edit and comment PAT
 
 test("fast path skips the label edit when the status label is unchanged", () => {
   const root = temporaryRoot();
-  const item = createWorkItem({ id: "REQ-23", issue_number: 23, title: "Same label", risk_level: "low", delivery_required: true });
+  const item = createWorkItem({ id: "REQ-23", issue_number: 23, title: "Same label", risk_level: "low", delivery_required: true, skip_allowed: false });
   seedMeta(root, item.id, { comment_id: 424242, state_label: "hulane:waiting-approval" });
   const { calls, run } = fakeRun([
     (args) => (isMethod(args, "PATCH") ? "" : undefined),
@@ -177,7 +179,7 @@ test("fast path skips the label edit when the status label is unchanged", () => 
 
 test("a 404 on the cached comment id falls back to the conservative full path", () => {
   const root = temporaryRoot();
-  const item = createWorkItem({ id: "REQ-24", issue_number: 24, title: "Stale meta", risk_level: "low", delivery_required: true });
+  const item = createWorkItem({ id: "REQ-24", issue_number: 24, title: "Stale meta", risk_level: "low", delivery_required: true, skip_allowed: false });
   seedMeta(root, item.id, { comment_id: 999999, state_label: "hulane:waiting-approval" });
   const managed = {
     id: 424242,
@@ -204,7 +206,7 @@ test("a 404 on the cached comment id falls back to the conservative full path", 
 
 test("hydrate records the managed comment id for later fast syncs", () => {
   const root = temporaryRoot();
-  const item = createWorkItem({ id: "REQ-25", issue_number: 25, title: "Hydrate meta", risk_level: "low", delivery_required: true });
+  const item = createWorkItem({ id: "REQ-25", issue_number: 25, title: "Hydrate meta", risk_level: "low", delivery_required: true, skip_allowed: false });
   const managed = { id: 555, updated_at: "2026-09-07T00:00:00Z", body: serializeGitHubState(item) };
   const { run } = fakeRun([
     (args) => (isCommentList(args) ? JSON.stringify([[managed]]) : undefined),
@@ -261,4 +263,28 @@ test("flush helpers precheck by title prefix, create, and rename idempotently", 
   // 复用路径标题落位
   renameIssueTitle({ repository: "org/pending", issueNumber: 7, title: "REQ-26 Offline pending", cwd: root, run });
   assert.ok(calls.some((args) => args[0] === "issue" && args[1] === "edit" && args.includes("7") && args.includes("REQ-26 Offline pending")));
+});
+
+// REQ-14:abandoned 的标签语义(AC-13)
+test("abandoned items sync under the hulane:abandoned label", () => {
+  const root = temporaryRoot();
+  const item = applyEvent(
+    createWorkItem({ id: "REQ-28", issue_number: 28, title: "Abandoned", risk_level: "low", delivery_required: false, delivery_reason: "docs", skip_allowed: true }),
+    "abandon",
+    { actor: "human:owner", evidence: "user cancelled the request" },
+  );
+  assert.equal(item.status, "abandoned");
+  assert.equal(stateLabel("abandoned"), "hulane:abandoned");
+  const { calls, run } = fakeRun([
+    (args) => (isCommentList(args) && !args.includes("--paginate") ? "[]" : undefined),
+    (args) => (isCommentList(args) ? "[]" : undefined),
+    (args) => (isLabelCreate(args) ? "" : undefined),
+    (args) => (isIssueView(args) ? JSON.stringify({ labels: [] }) : undefined),
+    (args) => (isIssueEdit(args) ? "" : undefined),
+    (args) => (args[0] === "api" && args.includes("--jq") ? "424242" : undefined),
+  ]);
+  const result = syncItemToGitHub(item, { repository: "org/abandoned", cwd: root, run });
+  assert.equal(result.label, "hulane:abandoned");
+  assert.ok(calls.some((args) => isLabelCreate(args) && args.includes("hulane:abandoned")));
+  assert.ok(calls.some((args) => isIssueEdit(args) && args.includes("--add-label", "hulane:abandoned")));
 });

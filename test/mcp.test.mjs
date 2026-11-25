@@ -375,6 +375,15 @@ test("open_work_item validates input before creating the GitHub Issue", () => {
       () => callTool("hulane_open_work_item", { ...openWorkItemArgs, risk_level: "medium" }, { cwd: root }),
       /size small requires risk_level low/,
     );
+    // REQ-14 互补不变量(AC-1):false+false 一律拒绝,工单不落库、无 Issue 产生
+    assert.throws(
+      () => callTool("hulane_open_work_item", { ...openWorkItemArgs, skip_allowed: false }, { cwd: root }),
+      /complementary: delivery_required XOR skip_allowed/,
+    );
+    assert.throws(
+      () => callTool("hulane_open_work_item", { ...openWorkItemArgs, delivery_required: true }, { cwd: root }),
+      /complementary: delivery_required XOR skip_allowed/,
+    );
     // 校验失败时 gh 绝不能被调用（否则又会留下孤儿 Issue）
     assert.equal(fs.existsSync(path.join(sandbox, "gh-calls.log")), false);
   });

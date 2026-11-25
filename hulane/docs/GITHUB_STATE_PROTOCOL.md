@@ -16,6 +16,7 @@ hulane:waiting-tag-confirm
 hulane:building
 hulane:blocked
 hulane:done
+hulane:abandoned
 ```
 
 The state comment starts with this marker:
@@ -56,6 +57,12 @@ Historical `done` records that predate the V2 evidence fields are marked
 `legacy_completion: true` during normalization. They remain readable and are
 never upgraded into fabricated V2 evidence; every newly created Work Item uses
 `legacy_completion: false` and the full current Done invariant.
+
+`abandoned` is the second terminal state (human-confirmed abandonment). Its
+Issue closes with `gh issue close <n> --reason "not planned"` — the guard
+state-verifies that form only from `abandoned` and rejects it from
+`waiting_close`; the `issue_closed` event then self-loops on `abandoned`,
+backfilling `issue_state: closed` without leaving the terminal state.
 
 Recovery order:
 

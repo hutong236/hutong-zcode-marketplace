@@ -108,7 +108,7 @@ const commands = filesIn("hulane/commands", ".md");
 const agents = filesIn("hulane/agents", ".md");
 const skillFiles = walk("hulane/skills").filter((name) => name.endsWith("/SKILL.md"));
 
-assert(commands.length === 10, `expected 10 commands, found ${commands.length}`);
+assert(commands.length === 11, `expected 11 commands, found ${commands.length}`);
 assert(agents.length === 7, `expected 7 agents, found ${agents.length}`);
 assert(skillFiles.length === 1, `expected 1 skill, found ${skillFiles.length}`);
 
@@ -158,7 +158,7 @@ for (const template of ["capability-spec.template.md", "delta-spec.template.md"]
 }
 
 const board = read("hulane/templates/obsidian/研发看板.md");
-for (const state of ["pr_checking", "waiting_human_merge", "waiting_tag_confirm", "waiting_close"]) {
+for (const state of ["pr_checking", "waiting_human_merge", "waiting_tag_confirm", "waiting_close", "abandoned"]) {
   assert(board.includes(`\"${state}\"`), `Obsidian board is missing ${state}`);
 }
 

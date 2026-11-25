@@ -21,6 +21,7 @@ function managedRepository({ allowlist, overrides = {} } = {}) {
     title: "Hook state",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }), status: "doing", ...overrides };
   writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
   if (allowlist) {
@@ -51,6 +52,7 @@ function releaseManagedRepository() {
     title: "Release guard",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   });
   writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
@@ -375,4 +377,21 @@ test("work-item tag token path is unchanged by the release channel", () => {
     () => issueAuthorization(unconfirmed, { id: "REQ-66", action: "git-tag", actor: "orchestrator" }),
     /Gate C approval/,
   );
+});
+
+// REQ-14:abandoned 关单守卫(AC-9/AC-10)
+test("abandoned issue close is state-verified only with --reason not planned", () => {
+  const abandoned = managedRepository({ overrides: { status: "abandoned" } });
+  const allowed = evaluateCommand({ cwd: abandoned, command: 'gh issue close 66 --repo acme/demo --reason "not planned" --comment "Abandoned"' });
+  assert.equal(allowed.allowed, true);
+  assert.match(allowed.reason, /State-verified issue-close for REQ-66/);
+
+  const missing = evaluateCommand({ cwd: abandoned, command: 'gh issue close 66 --repo acme/demo --comment "Abandoned"' });
+  assert.equal(missing.allowed, false);
+  assert.match(missing.reason, /requires --reason "not planned"/);
+
+  const regular = managedRepository({ overrides: { status: "waiting_close", specs_synced: true, specs_commit_sha: "a".repeat(40), spec_delta_dir: "openspec/changes/archive/REQ-66" } });
+  const tainted = evaluateCommand({ cwd: regular, command: 'gh issue close 66 --repo acme/demo --reason "not planned"' });
+  assert.equal(tainted.allowed, false);
+  assert.match(tainted.reason, /must not carry --reason "not planned"/);
 });

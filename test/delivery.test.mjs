@@ -27,6 +27,7 @@ function item() {
     title: "Delivery",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }), merged_sha: mergedSha, image_tag: "v1.4.0" };
 }
 

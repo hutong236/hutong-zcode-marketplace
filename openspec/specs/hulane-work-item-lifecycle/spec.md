@@ -96,3 +96,47 @@ hulane_flush 在一次串行在线窗口完成：标题幂等预查→补建 Iss
 
 - WHEN flush 完成后进入 push/merge/close 环节
 - THEN 仍走原令牌与状态自证，守卫行为不变
+
+### Requirement: 作废终态(abandoned)
+
+状态机 SHALL 提供 done 之外的第二个终态 abandoned:人工确认的 `abandon` 事件 SHALL 加入 HUMAN_EVENTS(actor 必须 human:身份 形式，requireHumanActor 拒绝 orchestrator)，SHALL 从任何非终态(含 blocked、waiting_tag_confirm 等)可达;abandon SHALL 要求非空 evidence(写明作废原因)，SHALL NOT 要求任何测试/评审/合并/镜像/规格同步证据。done 与 abandoned SHALL 均为终态:block、resume、abandon 均无法离开任一终态。abandoned 工单的 GitHub Issue 关单 SHALL 以 `gh issue close <n> --reason "not planned"` 完成，守卫的状态自证 SHALL 认可 abandoned 终态:从 abandoned 关单必须携带该 reason、从 waiting_close 常规关单必须不携带;两条路径的既有约束(点名精确 Issue 号、单操作、pending 拒绝、规格门禁仅适用 waiting_close)SHALL 保持。`issue_closed` SHALL 在 abandoned 上作为自环(仅回填 issue_state=closed、状态保持 abandoned)。issue_pending=true 的工单 SHALL 可直接作废(无 Issue 可关)，其后的 issue_closed 仍 SHALL 被拒(先 flush)。同步 SHALL 为 abandoned 工单打 `hulane:abandoned` 标签;SessionStart 上下文与 Stop 完成声明钩子 SHALL 把 abandoned 视为终态。
+
+#### Scenario: 任意非终态人工作废
+
+- WHEN 对 doing/blocked/waiting_tag_confirm 等非终态工单以 actor=human:身份 应用 abandon，evidence 写明作废原因
+- THEN 状态直达 abandoned，next_action=none，history 留痕，无任何交付证据要求
+
+#### Scenario: 非人类 actor 被拒
+
+- WHEN 以 actor=orchestrator 应用 abandon
+- THEN 抛错，状态不变
+
+#### Scenario: 终态不可再作废或阻塞
+
+- WHEN 对 done 或 abandoned 工单应用 abandon 或 block
+- THEN 抛错，状态不变
+
+#### Scenario: 守卫认可 not planned 关单
+
+- WHEN 工单处于 abandoned 且执行带 `--reason "not planned"` 的关单命令
+- THEN 守卫状态自证放行(仍要求单操作、点名 Issue 号)
+
+#### Scenario: 守卫强制关单 reason
+
+- WHEN abandoned 工单不带 not planned 关单，或 waiting_close 工单带该 reason 关单
+- THEN 守卫拒绝
+
+#### Scenario: issue_closed 自环回填
+
+- WHEN 对 Issue 已实际关闭的 abandoned 工单应用 issue_closed
+- THEN issue_state=closed、状态保持 abandoned、history 留痕
+
+#### Scenario: pending 工单作废
+
+- WHEN 对 issue_pending=true 工单应用 abandon(随后应用 issue_closed)
+- THEN abandon 成功;issue_closed 抛错要求先 flush
+
+#### Scenario: 标签与钩子终态语义
+
+- WHEN 同步 abandoned 工单，或 SessionStart/Stop 钩子读取含 abandoned 工单的 store
+- THEN Issue 打 hulane:abandoned 标签;abandoned 不出现在活跃工单上下文，也不触发 Stop 的完成声明拦截

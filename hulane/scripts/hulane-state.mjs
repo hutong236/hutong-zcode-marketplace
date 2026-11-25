@@ -40,7 +40,7 @@ function output(value, json = true) {
 function help() {
   output(`hulane-state commands:
   init [--repository owner/repo]
-  new [--id REQ-123] [--issue 123] --title ... --risk low [--size small] --delivery-required true [--skip-allowed false] [--delivery-reason ...] [--spec-sync-required false]
+  new [--id REQ-123] [--issue 123] --title ... --risk low [--size small] [--delivery-required false] [--skip-allowed true] [--delivery-reason ...] [--spec-sync-required false]
     (omit --issue for local-first creation: local numbering, issue_pending=true, GitHub Issue deferred to hulane_flush)
   transition REQ-123 <event> --actor <identity> --evidence <text> [--patch JSON] [--to state]
   status [REQ-123]
@@ -75,9 +75,9 @@ async function main() {
       type: flags.type,
       risk_level: required(flags, "risk"),
       size: flags.size,
-      delivery_required: flags.delivery_required ?? true,
+      delivery_required: flags.delivery_required ?? false,
       delivery_reason: flags.delivery_reason,
-      skip_allowed: flags.skip_allowed ?? false,
+      skip_allowed: flags.skip_allowed ?? true,
       spec_sync_required: flags.spec_sync_required,
       github_issue_url: flags.github_issue_url,
       actor: flags.actor ?? "orchestrator",
