@@ -28,9 +28,119 @@ const REQUIRED_STATE = Object.freeze({
   "issue-close": ["waiting_close", "abandoned"],
 });
 
-// `gh issue close <n> --reason "not planned"` 的形态识别:引号可有可无
-function closeCarriesNotPlannedReason(command) {
-  return /(?:^|\s)--reason(?:=|\s+)["']?not planned["']?(?:\s|$)/.test(String(command));
+// ===== 引号感知解析层(BUG-15) =====
+// 手写小型 tokenizer(仓库零依赖):把命令切成带引号标记的词元。双引号内
+// 反斜杠转义下一字符、单引号内 '' 为字面单引号(与 guard.mjs
+// stripMessageBodies 同一约定);未闭合引号的余下内容仍按引号内数据处理
+// (fail-closed:不构成真实旗标、不构成点名,该命令本身也过不了 shell 解析)。
+// reason 旗标识别与点名校验共用本层,杜绝注释体等数据值伪造旗标/点名。
+function tokenizeShellWords(command) {
+  const text = String(command ?? "");
+  const tokens = [];
+  let current = "";
+  let hasCurrent = false;
+  const flush = () => {
+    if (hasCurrent) tokens.push({ text: current, quoted: false });
+    current = "";
+    hasCurrent = false;
+  };
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '"' || char === "'") {
+      const quote = char;
+      // 引号串与前后文粘连(如 --reason="not planned"):引号前前缀先落为
+      // 引号外词元,引号串整体落为引号内词元
+      flush();
+      let body = "";
+      index += 1;
+      while (index < text.length) {
+        const inner = text[index];
+        if (quote === '"' && inner === "\\") {
+          body += text[index + 1] === undefined ? "\\" : text.slice(index, index + 2);
+          index += 2;
+          continue;
+        }
+        if (inner === quote) {
+          if (quote === "'" && text[index + 1] === "'") {
+            body += "'";
+            index += 2;
+            continue;
+          }
+          index += 1;
+          break;
+        }
+        body += inner;
+        index += 1;
+      }
+      tokens.push({ text: body, quoted: true });
+      continue;
+    }
+    if (/\s/.test(char)) {
+      flush();
+      index += 1;
+      continue;
+    }
+    current += char;
+    hasCurrent = true;
+    index += 1;
+  }
+  flush();
+  return tokens;
+}
+
+const REASON_FLAG = "--reason";
+
+// 引号外的真实 --reason 旗标:词元恰为 --reason,或以 --reason= 粘连开头
+function isReasonFlag(token) {
+  return !token.quoted && (token.text === REASON_FLAG || token.text.startsWith(`${REASON_FLAG}=`));
+}
+
+// 旗标值宽容度与 REQ-14 决策一致(引号可有可无、--reason= 粘连认),覆盖
+// --reason not planned / --reason "not planned" / --reason=not planned /
+// --reason="not planned" 四种受控形态;返回其值词元下标数组(空为无值)
+function reasonFlagValueIndices(tokens, index) {
+  const token = tokens[index];
+  const next = tokens[index + 1];
+  if (token.text === REASON_FLAG) {
+    if (!next) return [];
+    if (next.text === "not planned") return [index + 1];
+    const third = tokens[index + 2];
+    if (!next.quoted && next.text === "not" && third && !third.quoted && third.text === "planned") {
+      return [index + 1, index + 2];
+    }
+    return [index + 1];
+  }
+  const glued = token.text.slice(REASON_FLAG.length + 1);
+  if (glued === "") return next ? [index + 1] : [];
+  if (glued === "not" && next && !next.quoted && next.text === "planned") return [index + 1];
+  return [];
+}
+
+// closeCarriesNotPlannedReason 的三态引号感知重写(BUG-15):
+//   "carried":引号外存在真实 --reason 旗标且值恰为 not planned
+//   "tainted":存在未被真实旗标消费的引号内 --reason 字样(注释体等数据值,
+//              fail-closed,abandoned/waiting_close 双向同语义拒绝)
+//   "absent" :无携带也无字样(其它 reason 值视为不携带,REQ-14 决策保持)
+function closeReasonState(command) {
+  const tokens = tokenizeShellWords(command);
+  let carried = false;
+  const consumed = new Set();
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!isReasonFlag(tokens[index])) continue;
+    const valueIndices = reasonFlagValueIndices(tokens, index);
+    for (const valueIndex of valueIndices) consumed.add(valueIndex);
+    const glued = tokens[index].text.slice(REASON_FLAG.length + 1);
+    const valueText = tokens[index].text === REASON_FLAG
+      ? valueIndices.map((valueIndex) => tokens[valueIndex].text).join(" ")
+      : [glued, ...valueIndices.map((valueIndex) => tokens[valueIndex].text)].join(" ").trim();
+    if (valueText === "not planned") carried = true;
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!tokens[index].quoted || consumed.has(index)) continue;
+    if (tokens[index].text.includes(REASON_FLAG)) return "tainted";
+  }
+  return carried ? "carried" : "absent";
 }
 
 function authorizationDirectory(root) {
@@ -85,8 +195,12 @@ function assertActionState(item, action) {
   }
 }
 
+// 点名校验锚定引号外(BUG-15):目标号必须是引号外的独立词元;注释体等
+// 数据值里的数字字样不构成点名——A 单令牌不能借 `--comment "see 122"`
+// 关掉 B 单的 Issue(pr-merge 同款)
 function commandHasNumber(command, number) {
-  return new RegExp(`(?:^|\\s)${number}(?:\\s|$)`).test(command);
+  const target = String(number);
+  return tokenizeShellWords(command).some((token) => !token.quoted && token.text === target);
 }
 
 // 远端加固:签发与消费都以远端事实为准,不信本地引用(可能陈旧)。
@@ -148,10 +262,16 @@ function assertExecutionScope(root, item, action, cwd, command) {
     throw new Error(`PR merge command must pin verified head SHA ${item.pr_head_sha}`);
   }
   if (action === "issue-close") {
-    // not planned reason 规则(REQ-14,token 路径与状态自证路径共用):
-    // abandoned 作废关单必须携带 `--reason "not planned"`,
-    // waiting_close 常规关单(Done)必须不携带——两种终态不得混淆
-    const notPlanned = closeCarriesNotPlannedReason(command);
+    // not planned reason 规则(REQ-14,token 路径与状态自证路径共用;BUG-15
+    // 引号感知重写):abandoned 作废关单必须携带引号外真实
+    // `--reason "not planned"` 旗标,waiting_close 常规关单(Done)必须不
+    // 携带——两种终态不得混淆;注释体等数据值里的 --reason 字样不被真实
+    // 旗标消费,一律 fail-closed 拒绝并提示改写,双向同语义
+    const reasonState = closeReasonState(command);
+    if (reasonState === "tainted") {
+      throw new Error('Issue close command embeds a quoted "--reason" lookalike in comment text; rewrite the quoted text so a real unquoted --reason "not planned" flag is unambiguous');
+    }
+    const notPlanned = reasonState === "carried";
     if (item.status === "abandoned" && !notPlanned) {
       throw new Error('Issue close from abandoned requires --reason "not planned"');
     }

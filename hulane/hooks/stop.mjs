@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import process from "node:process";
 import { findControlRoot, readStore, storePath } from "../scripts/lib/state-store.mjs";
-import { TERMINAL_STATES } from "../scripts/lib/state-machine.mjs";
+import { isTerminalState } from "../scripts/lib/state-machine.mjs";
 
 let raw = "";
 process.stdin.setEncoding("utf8");
@@ -19,7 +19,7 @@ if (ids.length && claimsCompletion) {
     if (fs.existsSync(storePath(root))) {
       const items = readStore(root, { allowMissing: false }).items;
       // 完成声明拦截只针对未终结工单:done(已交付)与 abandoned(已作废)均为终态
-      const incomplete = ids.filter((id) => items[id] && !TERMINAL_STATES.has(items[id].status));
+      const incomplete = ids.filter((id) => items[id] && !isTerminalState(items[id].status));
       if (incomplete.length) {
         process.stdout.write(JSON.stringify({
           decision: "block",

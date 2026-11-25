@@ -161,7 +161,7 @@ test("dogfood specs in this repository pass their own validator", () => {
     requirementCounts[capability] = spec.requirements.length;
   }
   assert.equal(requirementCounts["hulane-release-workflow"], 7);
-  assert.equal(requirementCounts["hulane-work-item-lifecycle"], 5);
+  assert.equal(requirementCounts["hulane-work-item-lifecycle"], 6);
   assert.equal(requirementCounts["hulane-execution-discipline"], 5);
 
   // 扫描全部决策史归档 delta:新增归档自动纳入校验
@@ -170,11 +170,12 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["REQ-11", "REQ-14", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
+  assert.deepEqual(archivedIds, ["BUG-15", "REQ-11", "REQ-14", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
   // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组;
   // REQ-11 的 delta:新能力四个 ADDED + 两个能力各展期一个 MODIFIED 条目;
-  // REQ-14 的 delta:两个能力各一个 ADDED 组(互补不变量 + 作废终态)
-  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"], "REQ-14": ["ADDED", "ADDED"] };
+  // REQ-14 的 delta:两个能力各一个 ADDED 组(互补不变量 + 作废终态);
+  // BUG-15 的 delta:lifecycle 一个 MODIFIED(作废终态整块重写)+ 一个 ADDED
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"], "REQ-14": ["ADDED", "ADDED"], "BUG-15": ["MODIFIED", "ADDED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
@@ -213,5 +214,45 @@ test("dogfood specs in this repository pass their own validator", () => {
   assert.deepEqual(req14.groups.flatMap((group) => group.requirements), [
     "交付政策互补不变量",
     "作废终态(abandoned)",
+  ]);
+  // BUG-15 的 delta:lifecycle 一个 MODIFIED(作废终态整块重写,补 3 个
+  // reason 解析 scenario)+ 一个 ADDED(特权操作单调用与受控形态零误拒)
+  const bug15 = validateSpecFile(
+    `openspec/changes/archive/BUG-15/${DELTA_SPEC_FILE}`,
+    fs.readFileSync(path.join(archiveRoot, "BUG-15", DELTA_SPEC_FILE), "utf8"),
+  );
+  assert.deepEqual(bug15.groups.flatMap((group) => group.requirements), [
+    "作废终态(abandoned)",
+    "特权操作单调用与受控形态零误拒",
+  ]);
+  // 主规格智能合并落位:两个需求块都在 lifecycle 主规格里,MODIFIED 块的
+  // 3 个 reason 解析 scenario 与 ADDED 块的 7 个 scenario 齐全
+  const lifecycle = validateSpecFile(
+    `${SPECS_DIR}/hulane-work-item-lifecycle/${CAPABILITY_SPEC_FILE}`,
+    fs.readFileSync(path.join(specsRoot, "hulane-work-item-lifecycle", CAPABILITY_SPEC_FILE), "utf8"),
+  );
+  const abandonedRequirement = lifecycle.requirements.find((requirement) => requirement.name === "作废终态(abandoned)");
+  assert.deepEqual(abandonedRequirement.scenarios, [
+    "任意非终态人工作废",
+    "非人类 actor 被拒",
+    "终态不可再作废或阻塞",
+    "守卫认可 not planned 关单",
+    "守卫强制关单 reason",
+    "issue_closed 自环回填",
+    "pending 工单作废",
+    "标签与钩子终态语义",
+    "注释体 reason 字样不构成携带",
+    "注释体 reason 字样对 waiting_close 亦 fail-closed",
+    "受控关单形态与注释并存零误拒",
+  ]);
+  const guardRequirement = lifecycle.requirements.find((requirement) => requirement.name === "特权操作单调用与受控形态零误拒");
+  assert.deepEqual(guardRequirement.scenarios, [
+    "链式同动作被拒",
+    "链式异动作仍拒",
+    "SKILL 受控形态零误拒",
+    "release 双令牌形态零误拒",
+    "消息体剥离与只读 tag 保持不计数",
+    "白名单远端推送回归",
+    "注释体数字不构成点名",
   ]);
 });

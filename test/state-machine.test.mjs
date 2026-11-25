@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { applyEvent, createWorkItem, nextLocalWorkItemNumber, normalizeWorkItem, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
+import { applyEvent, createWorkItem, isTerminalState, nextLocalWorkItemNumber, normalizeWorkItem, STATES, TERMINAL_STATES, validateWorkItem, validateWorkItemInput } from "../hulane/scripts/lib/state-machine.mjs";
 
 const sha = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
@@ -889,4 +889,24 @@ test("abandoned items never enter the Done invariant branch", () => {
   assert.equal(abandoned.tester_result, "pending");
   assert.equal(abandoned.merged_sha, null);
   assert.equal(validateWorkItem(abandoned), true);
+});
+
+// BUG-15:TERMINAL_STATES 冻结载体数组化 + isTerminalState 辅助(AC-11);
+// 终态拒绝(block/abandon/resume)零回归由上方 AC-8 用例冻结
+test("TERMINAL_STATES is a strictly frozen array surfaced through isTerminalState (AC-11)", () => {
+  assert.deepEqual(TERMINAL_STATES, ["done", "abandoned"]);
+  // 严格模式哨兵:越界写入抛 TypeError——Object.freeze(new Set()) 冻不住
+  // add/delete,frozen array 补齐这一缺口
+  assert.throws(() => TERMINAL_STATES.push("x"), TypeError);
+  assert.throws(() => {
+    TERMINAL_STATES[0] = "waiting_close";
+  }, TypeError);
+  assert.deepEqual(TERMINAL_STATES, ["done", "abandoned"]);
+  for (const status of ["done", "abandoned"]) {
+    assert.equal(isTerminalState(status), true);
+    assert.ok(STATES.includes(status));
+  }
+  for (const status of ["doing", "blocked", "waiting_close", "waiting_approval", undefined, null]) {
+    assert.equal(isTerminalState(status), false);
+  }
 });

@@ -625,3 +625,189 @@ test("issue close from abandoned requires --reason not planned on both token and
     /requires --reason "not planned"/,
   );
 });
+
+// ===== BUG-15:reason 旗标引号外锚定与点名校验引号外锚定 =====
+
+// AC-6/AC-7:注释体 --reason 字样不构成携带——abandoned 侧指明缺少真实旗标,
+// waiting_close 侧提示改写注释文本且不误报 must not carry(双向同语义 fail-closed)
+test("comment-body --reason lookalikes never count as carrying not planned on either terminal path (AC-6/AC-7)", () => {
+  const { root } = repositoryWithItem("abandoned");
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --repo acme/demo --comment "cancelled --reason not planned"',
+    }),
+    /quoted "--reason" lookalike/,
+  );
+  // 拒绝原因指明缺少真实的 --reason "not planned" 旗标(该命令实际将以 completed 关)
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --repo acme/demo --comment "cancelled --reason not planned"',
+    }),
+    /real unquoted --reason "not planned" flag/,
+  );
+
+  // waiting_close 同款 fail-closed:提示改写注释文本,不得误报 must not carry
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.throws(
+    () => verifyStateAuthorization(regular.root, {
+      action: "issue-close",
+      cwd: regular.root,
+      command: 'gh issue close 25 --repo acme/demo --comment "duplicate of --reason not planned note"',
+    }),
+    (error) => /lookalike/.test(error.message) && !/must not carry/.test(error.message),
+  );
+
+  // 令牌路径同语义
+  const tokenized = repositoryWithItem("abandoned");
+  const authorization = issueAuthorization(tokenized.root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(tokenized.root, {
+      token: authorization.token,
+      action: "issue-close",
+      cwd: tokenized.root,
+      command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25 --comment "cancelled --reason not planned"`,
+    }, clock),
+    /quoted "--reason" lookalike/,
+  );
+});
+
+// AC-8:受控关单形态与注释并存零误拒——两种终态语义照常裁决
+test("controlled close forms with comments keep their terminal verdicts (AC-8)", () => {
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.equal(verifyStateAuthorization(regular.root, {
+    action: "issue-close",
+    cwd: regular.root,
+    command: 'gh issue close 25 --repo acme/demo --comment "Done"',
+  }).id, "REQ-25");
+
+  const abandoned = repositoryWithItem("abandoned");
+  assert.equal(verifyStateAuthorization(abandoned.root, {
+    action: "issue-close",
+    cwd: abandoned.root,
+    command: 'gh issue close 25 --repo acme/demo --reason "not planned" --comment "Abandoned"',
+  }).id, "REQ-25");
+  // 单引号形态同认
+  assert.equal(verifyStateAuthorization(abandoned.root, {
+    action: "issue-close",
+    cwd: abandoned.root,
+    command: "gh issue close 25 --repo acme/demo --reason 'not planned' --comment 'Abandoned'",
+  }).id, "REQ-25");
+});
+
+// AC-9:宽容度保持——无引号与 --reason= 粘连从 abandoned 放行;其它 reason 值仍拒
+test("reason tolerance keeps quotes-optional and glued forms while other values stay rejected (AC-9)", () => {
+  const { root } = repositoryWithItem("abandoned");
+  assert.equal(verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: "gh issue close 25 --reason not planned",
+  }).id, "REQ-25");
+  assert.equal(verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: 'gh issue close 25 --reason="not planned"',
+  }).id, "REQ-25");
+  assert.equal(verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: "gh issue close 25 --reason=not planned",
+  }).id, "REQ-25");
+
+  // 其它 reason 值视为不携带:abandoned 仍要求真实旗标
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --reason "not-planned"',
+    }),
+    /requires --reason "not planned"/,
+  );
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --reason "Not Planned"',
+    }),
+    /requires --reason "not planned"/,
+  );
+  // waiting_close 携带真实旗标(粘连形态)仍拒:must not carry
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.throws(
+    () => verifyStateAuthorization(regular.root, {
+      action: "issue-close",
+      cwd: regular.root,
+      command: 'gh issue close 25 --reason="not planned"',
+    }),
+    /must not carry/,
+  );
+});
+
+// AC-10:commandHasNumber 锚定引号外——A 单令牌不能借注释体数字关 B 单
+// (pr-merge 同款);拒绝在令牌消费前,纠正后同令牌重试成功
+test("commandHasNumber anchors naming to unquoted tokens on close and merge paths (AC-10)", () => {
+  // issue-close:目标 Issue 号只出现在注释体 → 点名失败
+  const target = repositoryWithItem("waiting_close", { ...specSynced, issue_number: 122 });
+  const authorization = issueAuthorization(target.root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(target.root, {
+      token: authorization.token,
+      action: "issue-close",
+      cwd: target.root,
+      command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25 --comment "see 122"`,
+    }, clock),
+    /must name Issue 122/,
+  );
+  // 拒绝不烧令牌:纠正为引号外真实点名后,同令牌重试成功
+  const consumed = consumeAuthorization(target.root, {
+    token: authorization.token,
+    action: "issue-close",
+    cwd: target.root,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 122`,
+  }, clock);
+  assert.equal(consumed.work_item, "REQ-25");
+
+  // pr-merge 同款:PR 号只在 --body 数据值里不构成点名
+  const mergeRepo = repositoryWithItem("merging", {
+    pr_number: 42,
+    reviewer_result: "approved",
+    pr_checks: "passed",
+    pr_check_name: "Hulane PR Checks / verify",
+    pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
+    pr_head_sha: sha,
+    merge_guard_mode: "control_plane_verified",
+    required_checks_enforced: false,
+  });
+  const mergeAuthorization = issueAuthorization(mergeRepo.root, {
+    id: "REQ-25",
+    action: "pr-merge",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(mergeRepo.root, {
+      token: mergeAuthorization.token,
+      action: "pr-merge",
+      cwd: mergeRepo.root,
+      command: `HULANE_AUTH_TOKEN=${mergeAuthorization.token} gh pr merge 43 --squash --match-head-commit ${sha} --body "follow-up for 42"`,
+    }, clock),
+    /must name PR 42/,
+  );
+  const merged = consumeAuthorization(mergeRepo.root, {
+    token: mergeAuthorization.token,
+    action: "pr-merge",
+    cwd: mergeRepo.root,
+    command: `HULANE_AUTH_TOKEN=${mergeAuthorization.token} gh pr merge 42 --squash --match-head-commit ${sha}`,
+  }, clock);
+  assert.equal(merged.work_item, "REQ-25");
+});
