@@ -182,8 +182,9 @@ export function evaluateCommand({ cwd, command, token, releaseTagToken, releaseP
         return { allowed: false, reason: error.message };
       }
     }
-    // issue-close / pr-merge 允许无令牌状态自证:waiting_close / merging 状态
-    // 本身就是已完成证据校验的授权,校验逻辑与令牌消费共用同一套
+    // issue-close / pr-merge 允许无令牌状态自证:waiting_close / merging / abandoned
+    // 状态本身就是已完成(或作废场景下人工确认)证据校验的授权,校验逻辑与令牌
+    // 消费共用同一套;abandoned 关单还须携带 --reason "not planned"
     if (actions[0] === "issue-close" || actions[0] === "pr-merge") {
       try {
         const item = verifyStateAuthorization(root, { action: actions[0], cwd, command });

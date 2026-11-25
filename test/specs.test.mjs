@@ -160,7 +160,8 @@ test("dogfood specs in this repository pass their own validator", () => {
     for (const requirement of spec.requirements) assert.ok(requirement.scenarios.length >= 1);
     requirementCounts[capability] = spec.requirements.length;
   }
-  assert.equal(requirementCounts["hulane-release-workflow"], 6);
+  assert.equal(requirementCounts["hulane-release-workflow"], 7);
+  assert.equal(requirementCounts["hulane-work-item-lifecycle"], 5);
   assert.equal(requirementCounts["hulane-execution-discipline"], 5);
 
   // 扫描全部决策史归档 delta:新增归档自动纳入校验
@@ -169,10 +170,11 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["REQ-11", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
+  assert.deepEqual(archivedIds, ["REQ-11", "REQ-14", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
   // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组;
-  // REQ-11 的 delta:新能力四个 ADDED + 两个能力各展期一个 MODIFIED 条目
-  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"] };
+  // REQ-11 的 delta:新能力四个 ADDED + 两个能力各展期一个 MODIFIED 条目;
+  // REQ-14 的 delta:两个能力各一个 ADDED 组(互补不变量 + 作废终态)
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"], "REQ-14": ["ADDED", "ADDED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
@@ -202,5 +204,14 @@ test("dogfood specs in this repository pass their own validator", () => {
     "提交内容卫生检查",
     "全局生效、逃生口与 fail-closed",
     "接线方式与既有守卫不变",
+  ]);
+  // REQ-14 的 delta:两能力各追加一个 ADDED 需求(交付政策互补不变量 + 作废终态)
+  const req14 = validateSpecFile(
+    `openspec/changes/archive/REQ-14/${DELTA_SPEC_FILE}`,
+    fs.readFileSync(path.join(archiveRoot, "REQ-14", DELTA_SPEC_FILE), "utf8"),
+  );
+  assert.deepEqual(req14.groups.flatMap((group) => group.requirements), [
+    "交付政策互补不变量",
+    "作废终态(abandoned)",
   ]);
 });

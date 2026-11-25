@@ -22,6 +22,7 @@ function legacyRepository({ withHulaneStore = false } = {}) {
     title: "Legacy control dir",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }), status: "pr_open", branch: "cmdb/req-90", worktree_path: path.join(root, ".cmdb-dev", "worktrees", "REQ-90") };
   const store = { schema_version: 2, repository: "acme/demo", revision: 3, updated_at: new Date().toISOString(), items: { [item.id]: item } };
   fs.mkdirSync(path.join(root, ".cmdb-dev"), { recursive: true });

@@ -19,7 +19,12 @@ export const STATES = Object.freeze([
   "waiting_close",
   "blocked",
   "done",
+  "abandoned",
 ]);
+
+// 终态集合:done(交付完成)与 abandoned(人工作废)都不可再离开,
+// block/resume/abandon 一律拒绝;SessionStart/Stop 钩子同语义复用
+export const TERMINAL_STATES = Object.freeze(new Set(["done", "abandoned"]));
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
 export const SIZES = Object.freeze(["standard", "small"]);
@@ -35,6 +40,7 @@ export const HUMAN_EVENTS = new Set([
   "approve_merge",
   "approve_tag",
   "approve_skip",
+  "abandon",
 ]);
 
 const REWORK_EVENTS = new Set(["tests_failed", "changes_requested", "checks_failed"]);
@@ -55,6 +61,9 @@ const STATIC_TRANSITIONS = Object.freeze({
   // specs_synced 是 waiting_close 上的自环:记录规格同步证据,不改变状态,
   // 但它是 spec_sync_required 工单 issue_closed 的硬前置
   waiting_close: { specs_synced: "waiting_close", issue_closed: "done" },
+  // issue_closed 在 abandoned 上同样是自环(仿 specs_synced 模式):Issue 以
+  // not planned 关闭后只回填 issue_state=closed,状态保持终态 abandoned
+  abandoned: { issue_closed: "abandoned" },
 });
 
 const PATCH_FIELDS = new Set([
@@ -240,9 +249,14 @@ export function validateWorkItemInput(input) {
   const size = input.size ?? "standard";
   if (!SIZES.includes(size)) throw new Error(`size must be one of ${SIZES.join(", ")}`);
   if (size === "small" && input.risk_level !== "low") throw new Error("size small requires risk_level low");
-  const deliveryRequired = asBoolean(input.delivery_required, true);
-  const skipAllowed = asBoolean(input.skip_allowed, false);
-  if (deliveryRequired && skipAllowed) throw new Error("Runtime delivery cannot allow skip");
+  const deliveryRequired = asBoolean(input.delivery_required, false);
+  const skipAllowed = asBoolean(input.skip_allowed, true);
+  // 互补不变量(REQ-14):两旗相等(false+false 与 true+true)一律非法——
+  // false+false 曾被放行后必然死锁(skip 事件被永久封死,唯一出路是完整
+  // 镜像证据链,而 done 校验又拒绝 skipped+!skip_allowed)
+  if (deliveryRequired === skipAllowed) {
+    throw new Error("delivery policy flags must be complementary: delivery_required XOR skip_allowed");
+  }
   if (!deliveryRequired && !String(input.delivery_reason ?? "").trim()) {
     throw new Error("Non-runtime delivery policy requires delivery_reason");
   }
@@ -351,13 +365,19 @@ export function createWorkItem(input, now = () => new Date()) {
 
 function targetFor(item, event, payload) {
   if (event === "block") {
-    if (item.status === "done") throw new Error("Done is terminal and cannot be blocked");
+    if (TERMINAL_STATES.has(item.status)) throw new Error("Done and abandoned are terminal and cannot be blocked");
     return "blocked";
+  }
+  // 人工作废(REQ-14):从任何非终态可达;evidence 写明原因,不要求任何
+  // 测试/评审/合并/镜像/规格同步证据(作废无交付可验)
+  if (event === "abandon") {
+    if (TERMINAL_STATES.has(item.status)) throw new Error("Done and abandoned are terminal and cannot be abandoned");
+    return "abandoned";
   }
   if (event === "resume") {
     if (item.status !== "blocked") throw new Error("resume is valid only from blocked");
     const target = payload.to ?? item.previous_status;
-    if (!STATES.includes(target) || ["blocked", "done"].includes(target)) {
+    if (!STATES.includes(target) || ["blocked", "done", "abandoned"].includes(target)) {
       throw new Error("Blocked item has no valid resumable previous state");
     }
     return target;
@@ -482,7 +502,9 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
   if (event === "issue_closed" && item.issue_pending === true) {
     throw new Error("issue_closed requires the GitHub Issue to exist; run hulane_flush first");
   }
-  if (event === "issue_closed" && item.spec_sync_required && item.specs_synced !== true) {
+  // 规格门禁仅适用 waiting_close 的常规关单:abandoned 自环不吃该前置
+  // (作废没有合并树可验 specs)
+  if (event === "issue_closed" && item.status === "waiting_close" && item.spec_sync_required && item.specs_synced !== true) {
     throw new Error("issue_closed requires recorded specs_synced evidence while spec_sync_required");
   }
 
@@ -585,6 +607,9 @@ export function applyEvent(item, event, payload = {}, now = () => new Date()) {
     // 自环回填:issue_number/github_issue_url 经 patch 写入,这里只翻转 pending 标志;
     // 状态与 next_action 保持不变,history 留痕
     next.issue_pending = false;
+  } else if (event === "abandon") {
+    // 人工作废:终态落位,不再有待办动作;evidence 已由全局前置强制写明原因
+    next.next_action = "none";
   } else if (event === "issue_closed") {
     next.issue_state = "closed";
     next.next_action = "none";
@@ -649,7 +674,9 @@ export function validateWorkItem(item) {
   if (item.specs_synced === true && !SHA_PATTERN.test(String(item.specs_commit_sha ?? ""))) {
     errors.push("recorded specs_synced requires a 40-character specs_commit_sha");
   }
-  if (item.delivery_required && item.skip_allowed) errors.push("runtime delivery cannot allow skip");
+  // 互补不变量(REQ-14):两旗相等即非法——readStore/writeStore/事件路径共用,
+  // 含矛盾两旗的存量工单整体不可读(fail-closed,CHANGELOG 明示破坏性)
+  if (item.delivery_required === item.skip_allowed) errors.push("invalid delivery policy: delivery_required XOR skip_allowed");
   if (!item.delivery_required && !String(item.delivery_reason ?? "").trim()) errors.push("delivery_reason required");
   if (!Array.isArray(item.history)) errors.push("history must be an array");
   if (!Number.isInteger(item.revision) || item.revision < 1) errors.push("invalid revision");

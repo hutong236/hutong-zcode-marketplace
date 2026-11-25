@@ -129,3 +129,27 @@ approve_requirement SHALL 把 approval_source(枚举 "issue_stop" | "pre_authori
 #### Scenario: 构建失败停等人工
 - WHEN 镜像 workflow 失败或 registry digest 缺失
 - THEN 编排者汇报失败原因与 run URL 并停等人工处置,不自动重试打 tag
+
+### Requirement: 交付政策互补不变量
+
+hulane SHALL 在开单输入校验(validateWorkItemInput)与持久化工单不变量(validateWorkItem)两层强制 delivery_required 与 skip_allowed 互补:两旗相等(true+true 与 false+false)一律非法;非运行时交付(delivery_required=false,即 skip_allowed=true)仍 SHALL 要求非空 delivery_reason。代码层缺省值(状态机与兼容 CLI)SHALL 与文档默认一致:delivery_required=false、skip_allowed=true;MCP hulane_open_work_item 的双旗必填参数是显式写入,输入校验 SHALL 作为最后防线在落库前拒绝矛盾组合。两旗 SHALL NOT 进入事件 patch 白名单(开单后不可带内改写,既有约束保持)。
+
+#### Scenario: 开单拒绝 false+false
+- WHEN 以 delivery_required=false、skip_allowed=false(且 delivery_reason 非空)调用 open_work_item
+- THEN validateWorkItemInput 抛错,工单不落库、无 Issue 产生
+
+#### Scenario: 开单拒绝 true+true(回归)
+- WHEN 以 true+true 组合调用
+- THEN 抛错,行为与既有拒绝一致
+
+#### Scenario: 互补组合放行
+- WHEN 以 false+true(默认)或 true+false(显式发版)调用
+- THEN 开单成功,策略照常持久化进工单
+
+#### Scenario: 持久化不变量同步收紧
+- WHEN 读取或校验含矛盾两旗的工单
+- THEN validateWorkItem 报 invalid delivery policy(readStore/writeStore/事件路径共用)
+
+#### Scenario: 缺省值对齐文档
+- WHEN 调用方省略两旗(兼容 CLI new 或防御性路径)
+- THEN 缺省为 delivery_required=false、skip_allowed=true,与 SKILL/README/INSTALL/流程规范四文档默认一致

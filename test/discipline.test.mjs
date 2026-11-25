@@ -39,6 +39,7 @@ function managedRepository({ allowlist } = {}) {
     title: "Discipline state",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }), status: "doing" };
   writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: new Date().toISOString(), items: { [item.id]: item } });
   if (allowlist) {

@@ -24,6 +24,7 @@ function repositoryWithItem(status, overrides = {}) {
     title: "Authorization test",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }, clock), status, ...overrides };
   writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: clock().toISOString(), items: { [item.id]: item } });
   return { root, item };
@@ -500,6 +501,7 @@ test("release tokens expire past their TTL and work-item tokens never pass as re
     title: "Authorization test",
     risk_level: "low",
     delivery_required: true,
+    skip_allowed: false,
   }, clock), status: "waiting_close", ...specSynced };
   writeStore(root, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: clock().toISOString(), items: { [item.id]: item } });
   const workItemToken = issueAuthorization(root, { id: "REQ-25", action: "issue-close", actor: "orchestrator" }, clock);
@@ -562,4 +564,64 @@ test("issue close and pr merge refuse issue_pending items until flush", () => {
     actor: "orchestrator",
   }, clock);
   assert.equal(authorization.work_item, "REQ-25");
+});
+
+// REQ-14:abandoned 关单的 not planned reason 规则与规格门禁豁免(token 路径 + 状态自证路径)
+test("issue close from abandoned requires --reason not planned on both token and state-verified paths (AC-9/AC-10)", () => {
+  // spec_sync_required=true 且未记录 specs_synced:abandoned 豁免规格门禁
+  const { root } = repositoryWithItem("abandoned");
+  const item = verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: 'gh issue close 25 --repo acme/demo --reason "not planned" --comment "Abandoned"',
+  });
+  assert.equal(item.id, "REQ-25");
+
+  // abandoned 不带 reason:拒绝
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --repo acme/demo --comment "Abandoned"',
+    }),
+    /requires --reason "not planned"/,
+  );
+  // waiting_close 带 reason:拒绝(常规 Done 关单不得携带)
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.throws(
+    () => verifyStateAuthorization(regular.root, {
+      action: "issue-close",
+      cwd: regular.root,
+      command: 'gh issue close 25 --repo acme/demo --reason "not planned"',
+    }),
+    /must not carry --reason "not planned"/,
+  );
+
+  // 令牌路径同规则:带 reason 消费成功、不带 reason 消费被拒
+  const authorized = issueAuthorization(root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  const consumed = consumeAuthorization(root, {
+    token: authorized.token,
+    action: "issue-close",
+    cwd: root,
+    command: `HULANE_AUTH_TOKEN=${authorized.token} gh issue close 25 --reason "not planned"`,
+  }, clock);
+  assert.equal(consumed.work_item, "REQ-25");
+  const reissued = issueAuthorization(root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(root, {
+      token: reissued.token,
+      action: "issue-close",
+      cwd: root,
+      command: `HULANE_AUTH_TOKEN=${reissued.token} gh issue close 25`,
+    }, clock),
+    /requires --reason "not planned"/,
+  );
 });
