@@ -117,6 +117,9 @@ function pushTargetsExempt(root, command) {
   return unmatched.length === 0 ? { exempt: true, targets } : { exempt: false };
 }
 
+// 导出契约:返回同一次 Bash 调用内检测到的全部受保护操作,逐个列出、
+// 不去重(BUG-15)——同动作链式(如 `gh issue close A && gh issue close B`)
+// 也逐个计数,evaluateCommand 据此强制单操作,不得按首个目标号放行其余
 export function analyzeCommand(command) {
   const actions = [];
   for (const segment of shellSegments(stripMessageBodies(command))) {
@@ -125,7 +128,7 @@ export function analyzeCommand(command) {
     if (containsGitSubcommand(segment, "push")) actions.push("git-push");
     if (containsGitSubcommand(segment, "tag") && !isReadOnlyGitTag(segment)) actions.push("git-tag");
   }
-  return [...new Set(actions)];
+  return actions;
 }
 
 function hookResult(decision, reason) {
@@ -141,6 +144,10 @@ function hookResult(decision, reason) {
 export function evaluateCommand({ cwd, command, token, releaseTagToken, releasePushToken }) {
   const actions = analyzeCommand(command);
   if (actions.length === 0) return { allowed: true, reason: "No protected operation" };
+  // 单操作约束按受保护操作计数强制(BUG-15):同动作链式与异动作链式一样,
+  // 在任何仓库/状态/令牌校验之前被拒——先于一切令牌消费,拒绝不烧令牌,
+  // 纠正后同令牌重试可用
+  if (actions.length > 1) return { allowed: false, reason: "Run exactly one protected operation per Bash call" };
 
   let root;
   try {
@@ -149,7 +156,6 @@ export function evaluateCommand({ cwd, command, token, releaseTagToken, releaseP
     return { allowed: true, reason: "Outside a Git worktree" };
   }
   if (!fs.existsSync(storePath(root))) return { allowed: true, reason: "Repository is not managed by hulane" };
-  if (actions.length > 1) return { allowed: false, reason: "Run exactly one protected operation per Bash call" };
   if (actions[0] === "git-push") {
     // 白名单内的显式远端（如插件市场仓库）不受令牌门禁；必须在 cd/-C 检查前判断，
     // 跨仓推送天然需要切换工作目录

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createWorkItem } from "../hulane/scripts/lib/state-machine.mjs";
 import { writeStore } from "../hulane/scripts/lib/state-store.mjs";
 import { issueAuthorization, issueReleaseAuthorization } from "../hulane/scripts/lib/authorization.mjs";
-import { evaluateCommand } from "../hulane/hooks/guard.mjs";
+import { analyzeCommand, evaluateCommand } from "../hulane/hooks/guard.mjs";
 
 const EXEMPT_REMOTE = "https://github.com/hutong236/hutong-zcode-marketplace.git";
 
@@ -394,4 +394,150 @@ test("abandoned issue close is state-verified only with --reason not planned", (
   const tainted = evaluateCommand({ cwd: regular, command: 'gh issue close 66 --repo acme/demo --reason "not planned"' });
   assert.equal(tainted.allowed, false);
   assert.match(tainted.reason, /must not carry --reason "not planned"/);
+});
+
+// ===== BUG-15:链式单操作计数、零误拒矩阵与消息体剥离保持 =====
+
+// AC-2:链式同动作四类逐条 deny;拒绝先于一切令牌消费(令牌不烧,纠正后同令牌重试可用)
+test("chained same-action operations are denied by count before any token consumption (AC-2)", () => {
+  const root = managedRepository({ overrides: { status: "waiting_close", specs_synced: true, specs_commit_sha: "a".repeat(40), spec_delta_dir: "openspec/changes/archive/REQ-66" } });
+  const chainedCommands = [
+    "gh issue close 66 && gh issue close 77",
+    "git push origin main && git push origin main",
+    'git tag -a v1.0.0 -m one && git tag -a v1.1.0 -m two',
+    `gh pr merge 66 --squash --match-head-commit ${"a".repeat(40)} && gh pr merge 77 --squash`,
+  ];
+  for (const command of chainedCommands) {
+    const result = evaluateCommand({ cwd: root, command });
+    assert.equal(result.allowed, false, command);
+    assert.match(result.reason, /exactly one protected operation/, command);
+  }
+  // analyzeCommand 不再同动作去重:受保护操作逐个列出
+  assert.deepEqual(analyzeCommand("gh issue close 66 && gh issue close 77"), ["issue-close", "issue-close"]);
+  assert.deepEqual(analyzeCommand("git push origin main && git push origin main"), ["git-push", "git-push"]);
+
+  // 拒绝先于令牌消费:链式带令牌被拒后,同令牌单操作重试成功
+  const building = managedRepository({ overrides: {
+    status: "building",
+    tag_confirmation: "approved",
+    image_tag: "v2.2.33",
+    merged_sha: "a".repeat(40),
+  } });
+  const authorization = issueAuthorization(building, { id: "REQ-66", action: "git-tag", actor: "orchestrator" });
+  const denied = evaluateCommand({
+    cwd: building,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} git tag -a v2.2.33 -m "one" ${"a".repeat(40)} && git tag -a v2.2.34 -m "two"`,
+    token: authorization.token,
+  });
+  assert.equal(denied.allowed, false);
+  assert.match(denied.reason, /exactly one protected operation/);
+  const corrected = evaluateCommand({
+    cwd: building,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} git tag -a v2.2.33 -m "one" ${"a".repeat(40)}`,
+    token: authorization.token,
+  });
+  assert.equal(corrected.allowed, true);
+  assert.match(corrected.reason, /Authorized git-tag for REQ-66/);
+});
+
+// AC-4:零误拒矩阵——SKILL 五受控形态 + release 双令牌两形态 + 白名单远端推送
+// 共 8 条逐条单调用,裁决与修复前一致(断流防线)
+test("zero false-positive matrix: five SKILL forms, two release legs, allowlisted remote (AC-4)", () => {
+  // 1) push 令牌形态:pr_open 真实分支与 worktree 钉死
+  const pushRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "hulane-guard-matrix-")));
+  execFileSync("git", ["init", "-q"], { cwd: pushRoot });
+  const branch = execFileSync("git", ["branch", "--show-current"], { cwd: pushRoot, encoding: "utf8" }).trim();
+  const pushItem = { ...createWorkItem({
+    id: "REQ-66",
+    issue_number: 66,
+    title: "Hook state",
+    risk_level: "low",
+    delivery_required: true,
+    skip_allowed: false,
+  }), status: "pr_open", branch, worktree_path: pushRoot };
+  writeStore(pushRoot, { schema_version: 2, repository: "acme/demo", revision: 0, updated_at: new Date().toISOString(), items: { [pushItem.id]: pushItem } });
+  const pushAuthorization = issueAuthorization(pushRoot, { id: "REQ-66", action: "git-push", actor: "orchestrator" });
+  const pushForm = evaluateCommand({
+    cwd: pushRoot,
+    command: `HULANE_AUTH_TOKEN=${pushAuthorization.token} git push origin HEAD`,
+    token: pushAuthorization.token,
+  });
+  assert.equal(pushForm.allowed, true);
+  assert.match(pushForm.reason, /Authorized git-push for REQ-66/);
+
+  // 2) tag 令牌形态
+  const tagRoot = managedRepository({ overrides: {
+    status: "building",
+    tag_confirmation: "approved",
+    image_tag: "v2.2.33",
+    merged_sha: "a".repeat(40),
+  } });
+  const tagAuthorization = issueAuthorization(tagRoot, { id: "REQ-66", action: "git-tag", actor: "orchestrator" });
+  const tagForm = evaluateCommand({
+    cwd: tagRoot,
+    command: `HULANE_AUTH_TOKEN=${tagAuthorization.token} git tag -a v2.2.33 -m "Release v2.2.33" ${"a".repeat(40)}`,
+    token: tagAuthorization.token,
+  });
+  assert.equal(tagForm.allowed, true);
+  assert.match(tagForm.reason, /Authorized git-tag for REQ-66/);
+
+  // 3) gh pr merge 状态自证形态
+  const mergeRoot = managedRepository({ overrides: { status: "merging", ...mergeGuardEvidence } });
+  const mergeForm = evaluateCommand({
+    cwd: mergeRoot,
+    command: `gh pr merge 66 --squash --match-head-commit ${"a".repeat(40)}`,
+  });
+  assert.equal(mergeForm.allowed, true);
+  assert.match(mergeForm.reason, /State-verified pr-merge for REQ-66/);
+
+  // 4) 常规关单形态
+  const closeRoot = managedRepository({ overrides: { status: "waiting_close", specs_synced: true, specs_commit_sha: "a".repeat(40), spec_delta_dir: "openspec/changes/archive/REQ-66" } });
+  const closeForm = evaluateCommand({ cwd: closeRoot, command: 'gh issue close 66 --repo acme/demo --comment "Done"' });
+  assert.equal(closeForm.allowed, true);
+  assert.match(closeForm.reason, /State-verified issue-close for REQ-66/);
+
+  // 5) not planned 关单形态
+  const abandonedRoot = managedRepository({ overrides: { status: "abandoned" } });
+  const abandonedForm = evaluateCommand({ cwd: abandonedRoot, command: 'gh issue close 66 --repo acme/demo --reason "not planned" --comment "Abandoned"' });
+  assert.equal(abandonedForm.allowed, true);
+  assert.match(abandonedForm.reason, /State-verified issue-close for REQ-66/);
+
+  // 6)+7) release 双令牌两形态(refspec 推送)
+  const { root, sha } = releaseManagedRepository();
+  const issued = issueReleaseAuthorization(root, { version: "v1.2.3", sha, evidence: "zero false-positive matrix" });
+  const releaseTagForm = evaluateCommand({
+    cwd: root,
+    command: `HULANE_RELEASE_TAG_TOKEN=${issued.tag_token} git tag -a v1.2.3 -m "Release v1.2.3" ${sha}`,
+    releaseTagToken: issued.tag_token,
+  });
+  assert.equal(releaseTagForm.allowed, true);
+  assert.match(releaseTagForm.reason, /Authorized release-tag v1\.2\.3/);
+  execFileSync("git", ["tag", "-a", "v1.2.3", "-m", "Release v1.2.3", sha], { cwd: root });
+  const tagObjectSha = execFileSync("git", ["rev-parse", "v1.2.3"], { cwd: root, encoding: "utf8" }).trim();
+  const releasePushForm = evaluateCommand({
+    cwd: root,
+    command: `HULANE_RELEASE_PUSH_TOKEN=${issued.push_token} git push origin ${tagObjectSha}:refs/tags/v1.2.3`,
+    releasePushToken: issued.push_token,
+  });
+  assert.equal(releasePushForm.allowed, true);
+  assert.match(releasePushForm.reason, /Authorized release-push v1\.2\.3/);
+
+  // 8) 白名单远端显式推送(含 cd 与 credential.helper 前缀)
+  const allowRoot = managedRepository({ allowlist: ["hutong236/hutong-zcode-marketplace"] });
+  const exemptForm = evaluateCommand({
+    cwd: allowRoot,
+    command: `cd /tmp/hutong-zcode-marketplace && git -c credential.helper='!gh auth git-credential' push ${EXEMPT_REMOTE} main`,
+  });
+  assert.equal(exemptForm.allowed, true);
+  assert.match(exemptForm.reason, /exempt remote/);
+});
+
+// AC-5:消息体剥离与只读 tag 不计入操作计数(既有 evaluateCommand 断言零改动,
+// 这里以 analyzeCommand 计数逐条冻结)
+test("message bodies stay stripped and read-only tag forms stay uncounted (AC-5)", () => {
+  assert.deepEqual(analyzeCommand('git tag -a v1.0.0 -m "match upstream push"'), ["git-tag"]);
+  assert.deepEqual(analyzeCommand('git commit -m "feat: push allowlist exemption for tag workflows"'), []);
+  assert.deepEqual(analyzeCommand("git tag --list"), []);
+  assert.deepEqual(analyzeCommand("git tag -l 'v*'"), []);
+  assert.deepEqual(analyzeCommand("git tag --contains v1.0.0"), []);
 });

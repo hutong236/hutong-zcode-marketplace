@@ -23,8 +23,16 @@ export const STATES = Object.freeze([
 ]);
 
 // 终态集合:done(交付完成)与 abandoned(人工作废)都不可再离开,
-// block/resume/abandon 一律拒绝;SessionStart/Stop 钩子同语义复用
-export const TERMINAL_STATES = Object.freeze(new Set(["done", "abandoned"]));
+// block/resume/abandon 一律拒绝;SessionStart/Stop 钩子同语义复用。
+// 冻结载体用数组而非 Set——Object.freeze(new Set()) 冻不住 add/delete,
+// frozen array 使越界写入在严格模式下抛 TypeError(BUG-15)
+export const TERMINAL_STATES = Object.freeze(["done", "abandoned"]);
+
+// 终态判定的唯一入口:状态机 targetFor 与 SessionStart/Stop 钩子共用,
+// 调用方不得绕过本辅助直捣集合实现
+export function isTerminalState(status) {
+  return TERMINAL_STATES.includes(status);
+}
 
 export const RISKS = Object.freeze(["low", "medium", "high"]);
 export const SIZES = Object.freeze(["standard", "small"]);
@@ -365,13 +373,13 @@ export function createWorkItem(input, now = () => new Date()) {
 
 function targetFor(item, event, payload) {
   if (event === "block") {
-    if (TERMINAL_STATES.has(item.status)) throw new Error("Done and abandoned are terminal and cannot be blocked");
+    if (isTerminalState(item.status)) throw new Error("Done and abandoned are terminal and cannot be blocked");
     return "blocked";
   }
   // 人工作废(REQ-14):从任何非终态可达;evidence 写明原因,不要求任何
   // 测试/评审/合并/镜像/规格同步证据(作废无交付可验)
   if (event === "abandon") {
-    if (TERMINAL_STATES.has(item.status)) throw new Error("Done and abandoned are terminal and cannot be abandoned");
+    if (isTerminalState(item.status)) throw new Error("Done and abandoned are terminal and cannot be abandoned");
     return "abandoned";
   }
   if (event === "resume") {
