@@ -811,3 +811,283 @@ test("commandHasNumber anchors naming to unquoted tokens on close and merge path
   }, clock);
   assert.equal(merged.work_item, "REQ-25");
 });
+
+// ===== BUG-16:重复旗标歧义拒绝与全部钉定点名的引号外锚定 =====
+
+const mergeGuardOverrides = (headSha) => ({
+  pr_number: 42,
+  reviewer_result: "approved",
+  pr_checks: "passed",
+  pr_check_name: "Hulane PR Checks / verify",
+  pr_check_run_url: "https://github.com/acme/demo/actions/runs/456",
+  pr_head_sha: headSha,
+  merge_guard_mode: "control_plane_verified",
+  required_checks_enforced: false,
+});
+
+// AC-1:重复真实 --reason 旗标(引号外)一律按歧义拒绝——gh 旗标语义
+// last-wins,「任一旗标携带即放行」与实际关单 reason 相反;双侧双路径同语义
+test("duplicate --reason flags are rejected as ambiguous on both sides and paths (AC-1)", () => {
+  // abandoned 侧:last-wins 窗口被封死,不再按任一旗标携带放行
+  const { root } = repositoryWithItem("abandoned");
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --reason "not planned" --reason completed',
+    }),
+    (error) => /repeats the --reason flag/.test(error.message) && /keep exactly one/.test(error.message),
+  );
+  // 粘连形态的重复旗标同样拒绝
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: "gh issue close 25 --reason=not planned --reason completed",
+    }),
+    /keep exactly one --reason flag/,
+  );
+
+  // waiting_close 侧:不再以「任一携带」进入 must not carry 语义,直接歧义拒绝
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.throws(
+    () => verifyStateAuthorization(regular.root, {
+      action: "issue-close",
+      cwd: regular.root,
+      command: 'gh issue close 25 --reason "not planned" --reason completed',
+    }),
+    (error) => /repeats the --reason flag/.test(error.message) && !/must not carry/.test(error.message),
+  );
+
+  // 令牌路径同语义
+  const tokenized = repositoryWithItem("abandoned");
+  const authorization = issueAuthorization(tokenized.root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(tokenized.root, {
+      token: authorization.token,
+      action: "issue-close",
+      cwd: tokenized.root,
+      command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25 --reason "not planned" --reason completed`,
+    }, clock),
+    /keep exactly one --reason flag/,
+  );
+});
+
+// AC-2:真实旗标的值词元内含 --reason 字样改按歧义拒绝并提示改写——
+// waiting_close 不再判 absent 放行(gh 对该形态必报错),abandoned 不再误报缺少旗标
+test("a --reason value embedding a --reason lookalike is rejected as ambiguous (AC-2)", () => {
+  const regular = repositoryWithItem("waiting_close", specSynced);
+  assert.throws(
+    () => verifyStateAuthorization(regular.root, {
+      action: "issue-close",
+      cwd: regular.root,
+      command: 'gh issue close 25 --reason "--reason not planned"',
+    }),
+    (error) => /inside a --reason value/.test(error.message) && /rewrite the value/.test(error.message),
+  );
+
+  const { root } = repositoryWithItem("abandoned");
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "issue-close",
+      cwd: root,
+      command: 'gh issue close 25 --reason "--reason not planned"',
+    }),
+    (error) => /inside a --reason value/.test(error.message) && !/requires --reason/.test(error.message),
+  );
+
+  // 令牌路径同语义
+  const authorization = issueAuthorization(root, {
+    id: "REQ-25",
+    action: "issue-close",
+    actor: "orchestrator",
+  }, clock);
+  assert.throws(
+    () => consumeAuthorization(root, {
+      token: authorization.token,
+      action: "issue-close",
+      cwd: root,
+      command: `HULANE_AUTH_TOKEN=${authorization.token} gh issue close 25 --reason "--reason not planned"`,
+    }, clock),
+    /rewrite the value/,
+  );
+});
+
+// AC-3:--match-head-commit 钉死锚定引号外——SHA 仅在 --body 引号内拒
+// (两路径);分离与粘连两受控形态零误拒;带引号值形态按裁决 #2 默认拒
+test("match-head-commit pinning anchors to unquoted flag forms on both paths (AC-3)", () => {
+  const headSha = "a".repeat(40);
+  const { root } = repositoryWithItem("merging", mergeGuardOverrides(headSha));
+  // SHA 仅在 --body 数据值里:钉死校验拒(状态自证路径)
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "pr-merge",
+      cwd: root,
+      command: `gh pr merge 42 --squash --body "pin --match-head-commit ${headSha}"`,
+    }),
+    /pin verified head SHA/,
+  );
+  // 两受控形态零误拒
+  assert.equal(verifyStateAuthorization(root, {
+    action: "pr-merge",
+    cwd: root,
+    command: `gh pr merge 42 --squash --match-head-commit ${headSha}`,
+  }).id, "REQ-25");
+  assert.equal(verifyStateAuthorization(root, {
+    action: "pr-merge",
+    cwd: root,
+    command: `gh pr merge 42 --squash --match-head-commit=${headSha}`,
+  }).id, "REQ-25");
+  // 带引号值形态默认拒(裁决 #2:非受控形态 fail-closed)
+  assert.throws(
+    () => verifyStateAuthorization(root, {
+      action: "pr-merge",
+      cwd: root,
+      command: `gh pr merge 42 --squash --match-head-commit "${headSha}"`,
+    }),
+    /pin verified head SHA/,
+  );
+
+  // 令牌路径同语义:SHA 仅在 --body 里拒、拒绝不烧令牌、纠正后同令牌重试成功
+  const authorization = issueAuthorization(root, { id: "REQ-25", action: "pr-merge", actor: "orchestrator" }, clock);
+  assert.throws(
+    () => consumeAuthorization(root, {
+      token: authorization.token,
+      action: "pr-merge",
+      cwd: root,
+      command: `HULANE_AUTH_TOKEN=${authorization.token} gh pr merge 42 --squash --body "pin --match-head-commit ${headSha}"`,
+    }, clock),
+    /pin verified head SHA/,
+  );
+  const consumed = consumeAuthorization(root, {
+    token: authorization.token,
+    action: "pr-merge",
+    cwd: root,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} gh pr merge 42 --squash --match-head-commit ${headSha}`,
+  }, clock);
+  assert.equal(consumed.work_item, "REQ-25");
+});
+
+// AC-4:merged_sha 与 building 态 image_tag 点名锚定引号外——消息体/config
+// 值携带字样不认;tag 令牌形态与 building 态 tag 推送形态零误拒
+test("merged_sha and image_tag naming anchor to unquoted tokens (AC-4)", () => {
+  const mergedSha = "a".repeat(40);
+  const otherSha = "b".repeat(40);
+  const building = { tag_confirmation: "approved", image_tag: "v2.2.33", merged_sha: mergedSha };
+
+  // git-tag:merged_sha 仅在 -m 消息体、tag 打到别的 commit → 钉死拒
+  const tagRepo = repositoryWithItem("building", building);
+  const tagAuthorization = issueAuthorization(tagRepo.root, { id: "REQ-25", action: "git-tag", actor: "orchestrator" }, clock);
+  assert.throws(
+    () => consumeAuthorization(tagRepo.root, {
+      token: tagAuthorization.token,
+      action: "git-tag",
+      cwd: tagRepo.root,
+      command: `HULANE_AUTH_TOKEN=${tagAuthorization.token} git tag -a v2.2.33 -m "Release v2.2.33 ${mergedSha}" ${otherSha}`,
+    }, clock),
+    /verified merged SHA/,
+  );
+  // image_tag 仅在消息体、tag 名换成别的 → 点名拒
+  assert.throws(
+    () => consumeAuthorization(tagRepo.root, {
+      token: tagAuthorization.token,
+      action: "git-tag",
+      cwd: tagRepo.root,
+      command: `HULANE_AUTH_TOKEN=${tagAuthorization.token} git tag -a v9.9.9 -m "Release v2.2.33 ${mergedSha}" ${mergedSha}`,
+    }, clock),
+    /Tag operation must name v2\.2\.33/,
+  );
+  // 受控 tag 令牌形态零误拒(拒绝不烧令牌,同令牌重试成功)
+  const tagged = consumeAuthorization(tagRepo.root, {
+    token: tagAuthorization.token,
+    action: "git-tag",
+    cwd: tagRepo.root,
+    command: `HULANE_AUTH_TOKEN=${tagAuthorization.token} git tag -a v2.2.33 -m "Release v2.2.33" ${mergedSha}`,
+  }, clock);
+  assert.equal(tagged.work_item, "REQ-25");
+
+  // building 态 push:config 值携带 image_tag 不认;受控 tag 推送形态零误拒
+  const pushRepo = repositoryWithItem("building", building);
+  const pushAuthorization = issueAuthorization(pushRepo.root, { id: "REQ-25", action: "git-push", actor: "orchestrator" }, clock);
+  assert.throws(
+    () => consumeAuthorization(pushRepo.root, {
+      token: pushAuthorization.token,
+      action: "git-push",
+      cwd: pushRepo.root,
+      command: `HULANE_AUTH_TOKEN=${pushAuthorization.token} git -c note=v2.2.33 push origin main`,
+    }, clock),
+    /Tag operation must name v2\.2\.33/,
+  );
+  const pushed = consumeAuthorization(pushRepo.root, {
+    token: pushAuthorization.token,
+    action: "git-push",
+    cwd: pushRepo.root,
+    command: `HULANE_AUTH_TOKEN=${pushAuthorization.token} git push origin v2.2.33`,
+  }, clock);
+  assert.equal(pushed.work_item, "REQ-25");
+});
+
+// AC-5:release 双腿点名锚定引号外——消息体字样钉死拒(不在错误 commit 建
+// tag);两受控形态零误拒,refspec 三重验证链既有断言零改动(见上方各 release 用例)
+test("release legs anchor version and SHA naming to unquoted tokens (AC-5)", () => {
+  const { root, sha } = releaseRepository();
+  const otherSha = "b".repeat(40);
+  const issued = issueReleaseAuthorization(root, { version: "v1.7.0", sha, evidence: "release" }, clock);
+
+  // tag 腿:version 在位、SHA 仅在 -m 消息体、commit 为别的 → 钉死拒
+  assert.throws(
+    () => consumeReleaseAuthorization(root, {
+      token: issued.tag_token,
+      action: "release-tag",
+      cwd: root,
+      command: `git tag -a v1.7.0 -m "Release v1.7.0 ${sha}" ${otherSha}`,
+    }, clock),
+    /pinned release SHA/,
+  );
+  // version 也仅在消息体:must name the pinned tag
+  assert.throws(
+    () => consumeReleaseAuthorization(root, {
+      token: issued.tag_token,
+      action: "release-tag",
+      cwd: root,
+      command: `git tag -a v9.9.9 -m "Release v1.7.0 ${sha}" ${otherSha}`,
+    }, clock),
+    /must name the pinned tag v1\.7\.0/,
+  );
+  // 受控 tag 腿零误拒(拒绝不烧令牌,同令牌重试成功)
+  const tagged = consumeReleaseAuthorization(root, {
+    token: issued.tag_token,
+    action: "release-tag",
+    cwd: root,
+    command: `HULANE_RELEASE_TAG_TOKEN=${issued.tag_token} git tag -a v1.7.0 -m "Release v1.7.0" ${sha}`,
+  }, clock);
+  assert.equal(tagged.target.version, "v1.7.0");
+
+  // push 腿受控形态零误拒:annotated tag 对象显式 refspec 照常过三重验证链
+  execFileSync("git", ["tag", "-a", "v1.7.0", "-m", "Release v1.7.0", sha], { cwd: root });
+  const tagObjectSha = execFileSync("git", ["rev-parse", "v1.7.0"], { cwd: root, encoding: "utf8" }).trim();
+  const pushed = consumeReleaseAuthorization(root, {
+    token: issued.push_token,
+    action: "release-push",
+    cwd: root,
+    command: `HULANE_RELEASE_PUSH_TOKEN=${issued.push_token} git push origin ${tagObjectSha}:refs/tags/v1.7.0`,
+  }, clock);
+  assert.equal(pushed.target.version, "v1.7.0");
+});
+
+// AC-7:状态自证目标号取首个引号外点名(裁决 #1)——引号内 gh issue close <B>
+// 字样在前、真实 <A> 在后 → 按 A 查工单照常裁决(旧版按引号内 <B> 查错工单
+// 恒 fail-closed 误拒)
+test("state verification extracts the first unquoted gh target sequence (AC-7)", () => {
+  const { root } = repositoryWithItem("waiting_close", specSynced);
+  const item = verifyStateAuthorization(root, {
+    action: "issue-close",
+    cwd: root,
+    command: 'echo "previously gh issue close 999 failed" && gh issue close 25 --repo acme/demo --comment "Done"',
+  });
+  assert.equal(item.id, "REQ-25");
+});
