@@ -88,7 +88,7 @@ approve_requirement SHALL 把 approval_source(枚举 "issue_stop" | "pre_authori
 
 ### Requirement: release 令牌约束
 
-`hulane_authorize_release` SHALL 签发仓库级(不挂工单)的 release 令牌:scope 钉死 {version(严格 SemVer), sha(40 位 SHA)}、单次使用、TTL 在既有 10–600 秒区间内,一次签发返回 tag 创建与 tag 推送两枚单次令牌;tag 已存在于远端、或 sha 非 origin/main HEAD 时 SHALL 拒绝签发;令牌消费时命令 SHALL 点名钉死的 tag 版本并与钉死 SHA 绑定:tag 创建命令 SHALL 点名钉死 commit SHA;tag 推送命令 SHALL 使用恰好一条显式 refspec `<annotated tag 对象 SHA>:refs/tags/<vX.Y.Z>`,消费时 SHALL 验证该对象为 annotated tag、即本地钉死版本之 tag 对象、且其解引用等于钉死 commit SHA,否则拒绝;裸 tag 写操作(无令牌)SHALL 仍被守卫拒绝;既有工单 tag 令牌路径(git-tag 于 building 态 + Gate C approved + merged_sha 点名)SHALL 回归不变。
+`hulane_authorize_release` SHALL 签发仓库级(不挂工单)的 release 令牌:scope 钉死 {version(严格 SemVer), sha(40 位 SHA)}、单次使用、TTL 在既有 10–600 秒区间内,一次签发返回 tag 创建与 tag 推送两枚单次令牌;tag 已存在于远端、或 sha 非 origin/main HEAD 时 SHALL 拒绝签发;令牌消费时命令 SHALL 点名钉死的 tag 版本并与钉死 SHA 绑定:两腿的点名 SHALL 锚定引号外词元(词元恰为钉死值),`-m` 消息体等数据值内的 version/SHA 字样不构成点名;tag 创建命令 SHALL 点名钉死 commit SHA;tag 推送命令 SHALL 使用恰好一条显式 refspec `<annotated tag 对象 SHA>:refs/tags/<vX.Y.Z>`,消费时 SHALL 验证该对象为 annotated tag、即本地钉死版本之 tag 对象、且其解引用等于钉死 commit SHA,否则拒绝;裸 tag 写操作(无令牌)SHALL 仍被守卫拒绝;既有工单 tag 令牌路径(git-tag 于 building 态 + Gate C approved + merged_sha 点名)SHALL 回归不变。
 
 #### Scenario: scope 钉死
 - WHEN tag 创建命令未点名钉死 commit SHA,或 tag 推送命令的显式 refspec 未同时绑定钉死版本与 annotated tag 对象
@@ -117,6 +117,14 @@ approve_requirement SHALL 把 approval_source(枚举 "issue_stop" | "pre_authori
 #### Scenario: 工单 tag 路径回归不变
 - WHEN 既有工单在 building 态经 hulane_authorize(git-tag) 打 tag
 - THEN 校验链(tag_confirmation=approved、merged_sha 点名、状态钉死)与 V3.6.0 一致,不受 release 令牌路径影响
+
+#### Scenario: 消息体字样不构成 release 点名
+- WHEN release-tag 腿执行 `git tag -a <vX.Y.Z> -m "Release <vX.Y.Z> <钉死sha>" <其它sha>`
+- THEN 消费被拒(must name the pinned tag/SHA),不得在错误 commit 上创建本地 tag
+
+#### Scenario: 受控 release 形态零误拒保持
+- WHEN 两腿按受控形态逐条单调用执行
+- THEN 零误拒进入 release 令牌通道,refspec 三重验证链行为不变
 
 ### Requirement: 无工单发版核验与审计
 

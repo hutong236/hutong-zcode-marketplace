@@ -541,3 +541,24 @@ test("message bodies stay stripped and read-only tag forms stay uncounted (AC-5)
   assert.deepEqual(analyzeCommand("git tag -l 'v*'"), []);
   assert.deepEqual(analyzeCommand("git tag --contains v1.0.0"), []);
 });
+
+// ===== BUG-16:词元锚定收紧后的零误拒扩测 =====
+
+// AC-6:building 态 tag 推送形态(git push origin <image_tag>)零误拒——
+// image_tag 点名改词元恰等锚定后,受控形态裁决与修复前一致
+test("building tag push form stays zero false-positive under token anchoring (AC-6)", () => {
+  const root = managedRepository({ overrides: {
+    status: "building",
+    tag_confirmation: "approved",
+    image_tag: "v2.2.33",
+    merged_sha: "a".repeat(40),
+  } });
+  const authorization = issueAuthorization(root, { id: "REQ-66", action: "git-push", actor: "orchestrator" });
+  const result = evaluateCommand({
+    cwd: root,
+    command: `HULANE_AUTH_TOKEN=${authorization.token} git push origin v2.2.33`,
+    token: authorization.token,
+  });
+  assert.equal(result.allowed, true);
+  assert.match(result.reason, /Authorized git-push for REQ-66/);
+});

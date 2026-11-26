@@ -117,23 +117,34 @@ function reasonFlagValueIndices(tokens, index) {
   return [];
 }
 
-// closeCarriesNotPlannedReason 的三态引号感知重写(BUG-15):
+// closeReasonState 的引号感知判定(BUG-15 三态 + BUG-16 两歧义态):
+//   "ambiguous-duplicate":出现 ≥2 个引号外真实 --reason 旗标——gh 旗标语义
+//              last-wins,「任一旗标携带」与实际关单 reason 相反,一律按
+//              歧义拒绝,双侧双路径同语义
+//   "ambiguous-value":真实旗标自身的值词元内含 --reason 字样(如
+//              --reason "--reason not planned"),同按歧义拒绝并提示改写,
+//              不得判为不携带而在 waiting_close 侧放行
 //   "carried":引号外存在真实 --reason 旗标且值恰为 not planned
 //   "tainted":存在未被真实旗标消费的引号内 --reason 字样(注释体等数据值,
 //              fail-closed,abandoned/waiting_close 双向同语义拒绝)
 //   "absent" :无携带也无字样(其它 reason 值视为不携带,REQ-14 决策保持)
 function closeReasonState(command) {
   const tokens = tokenizeShellWords(command);
-  let carried = false;
-  const consumed = new Set();
+  const flagIndices = [];
   for (let index = 0; index < tokens.length; index += 1) {
-    if (!isReasonFlag(tokens[index])) continue;
+    if (isReasonFlag(tokens[index])) flagIndices.push(index);
+  }
+  if (flagIndices.length >= 2) return "ambiguous-duplicate";
+  const consumed = new Set();
+  let carried = false;
+  for (const index of flagIndices) {
     const valueIndices = reasonFlagValueIndices(tokens, index);
     for (const valueIndex of valueIndices) consumed.add(valueIndex);
     const glued = tokens[index].text.slice(REASON_FLAG.length + 1);
     const valueText = tokens[index].text === REASON_FLAG
       ? valueIndices.map((valueIndex) => tokens[valueIndex].text).join(" ")
       : [glued, ...valueIndices.map((valueIndex) => tokens[valueIndex].text)].join(" ").trim();
+    if (valueText.includes(REASON_FLAG)) return "ambiguous-value";
     if (valueText === "not planned") carried = true;
   }
   for (let index = 0; index < tokens.length; index += 1) {
@@ -195,12 +206,40 @@ function assertActionState(item, action) {
   }
 }
 
+// ===== 词元锚定的点名/钉定判定族(BUG-16) =====
+// 全部钉定点名共用:目标值必须是引号外词元——恰等于目标值,或为旗标的
+// 粘连/分离值形态;-m 消息体、--comment/--body、-c note=... 等数据值词元
+// (含目标字样的混合文本)不构成点名或钉死
+function commandNamesValue(command, value) {
+  const target = String(value ?? "");
+  return tokenizeShellWords(command).some((token) => !token.quoted && token.text === target);
+}
+
+// 旗标钉定(--match-head-commit 专用):`--<flag> <value>` 分离与
+// `--<flag>=<value>` 粘连两受控形态认,值词元必须引号外且恰等于目标值;
+// 带引号值形态默认拒(Gate A 裁决 #2:SHA 钉死受控形态文档化为裸值,
+// 不与 reason 值宽容度看齐)
+function commandPinsFlagValue(command, flag, value) {
+  const target = String(value ?? "");
+  const tokens = tokenizeShellWords(command);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.quoted) continue;
+    if (token.text === `--${flag}`) {
+      const next = tokens[index + 1];
+      if (next && !next.quoted && next.text === target) return true;
+      continue;
+    }
+    if (token.text === `--${flag}=${target}`) return true;
+  }
+  return false;
+}
+
 // 点名校验锚定引号外(BUG-15):目标号必须是引号外的独立词元;注释体等
 // 数据值里的数字字样不构成点名——A 单令牌不能借 `--comment "see 122"`
-// 关掉 B 单的 Issue(pr-merge 同款)
+// 关掉 B 单的 Issue(pr-merge 同款)。BUG-16 起并入词元锚定判定族
 function commandHasNumber(command, number) {
-  const target = String(number);
-  return tokenizeShellWords(command).some((token) => !token.quoted && token.text === target);
+  return commandNamesValue(command, number);
 }
 
 // 远端加固:签发与消费都以远端事实为准,不信本地引用(可能陈旧)。
@@ -249,25 +288,32 @@ function assertExecutionScope(root, item, action, cwd, command) {
     const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout.trim();
     if (branch !== item.branch) throw new Error(`Branch push requires ${item.branch}, found ${branch || "detached HEAD"}`);
   }
-  if (["git-tag", "git-push"].includes(action) && item.status === "building" && !String(command).includes(item.image_tag)) {
+  if (["git-tag", "git-push"].includes(action) && item.status === "building" && !commandNamesValue(command, item.image_tag)) {
     throw new Error(`Tag operation must name ${item.image_tag}`);
   }
-  if (action === "git-tag" && !String(command).includes(item.merged_sha)) {
+  if (action === "git-tag" && !commandNamesValue(command, item.merged_sha)) {
     throw new Error("Annotated tag command must name the verified merged SHA");
   }
   if (action === "pr-merge" && !commandHasNumber(String(command), item.pr_number)) {
     throw new Error(`PR merge command must name PR ${item.pr_number}`);
   }
-  if (action === "pr-merge" && !new RegExp(`--match-head-commit(?:=|\\s+)${item.pr_head_sha}(?:\\s|$)`).test(String(command))) {
+  if (action === "pr-merge" && !commandPinsFlagValue(command, "match-head-commit", item.pr_head_sha)) {
     throw new Error(`PR merge command must pin verified head SHA ${item.pr_head_sha}`);
   }
   if (action === "issue-close") {
     // not planned reason 规则(REQ-14,token 路径与状态自证路径共用;BUG-15
-    // 引号感知重写):abandoned 作废关单必须携带引号外真实
+    // 引号感知重写 + BUG-16 歧义拒绝):abandoned 作废关单必须携带引号外真实
     // `--reason "not planned"` 旗标,waiting_close 常规关单(Done)必须不
     // 携带——两种终态不得混淆;注释体等数据值里的 --reason 字样不被真实
-    // 旗标消费,一律 fail-closed 拒绝并提示改写,双向同语义
+    // 旗标消费,一律 fail-closed 拒绝并提示改写,双向同语义;重复真实旗标
+    // 与值内嵌字样同按歧义拒绝(gh last-wins,不得按任一旗标放行)
     const reasonState = closeReasonState(command);
+    if (reasonState === "ambiguous-duplicate") {
+      throw new Error('Issue close command repeats the --reason flag (gh applies only the last value); keep exactly one --reason flag so the close intent is unambiguous');
+    }
+    if (reasonState === "ambiguous-value") {
+      throw new Error('Issue close command embeds a "--reason" lookalike inside a --reason value; rewrite the value so a single unquoted --reason "not planned" flag is unambiguous');
+    }
     if (reasonState === "tainted") {
       throw new Error('Issue close command embeds a quoted "--reason" lookalike in comment text; rewrite the quoted text so a real unquoted --reason "not planned" flag is unambiguous');
     }
@@ -418,10 +464,21 @@ function assertReleaseExecutionScope(root, authorization, action, cwd, command) 
   if (!cwd || !command) throw new Error("Authorization consumption requires command context");
   if (canonicalPath(findControlRoot(cwd)) !== canonicalPath(root)) throw new Error("Protected command targets a different repository");
   const { version, sha } = authorization.target;
-  if (!String(command).includes(version)) {
+  // 点名预检锚定引号外词元(BUG-16):version/sha 必须是引号外词元恰等于
+  // 钉死值;push 腿的受控 refspec `<40位>:refs/tags/<version>` 整体词元同认
+  // (对象真伪与钉死绑定仍由下方 refspec 判等与三重验证链裁决);-m 消息体
+  // 等数据值内的字样不构成点名
+  const namesVersion = commandNamesValue(command, version)
+    || (action === "release-push" && pushRefspecsOf(command).some((refspec) => {
+      const separator = refspec.indexOf(":");
+      return separator !== -1
+        && /^[0-9a-f]{40}$/.test(refspec.slice(0, separator).toLowerCase())
+        && refspec.slice(separator + 1) === `refs/tags/${version}`;
+    }));
+  if (!namesVersion) {
     throw new Error(`Release ${action} command must name the pinned tag ${version}`);
   }
-  if (action === "release-tag" && !String(command).includes(sha)) {
+  if (action === "release-tag" && !commandNamesValue(command, sha)) {
     throw new Error("Annotated tag command must name the pinned release SHA");
   }
   if (action === "release-push") {
@@ -469,12 +526,20 @@ export function consumeReleaseAuthorization(root, { token, action, cwd, command 
 // 离开目标态(abandoned 的 issue_closed 是自环、issue 已关不可重关),重放即被拒。
 export const STATE_VERIFIED_ACTIONS = Object.freeze(["issue-close", "pr-merge"]);
 
+// 状态自证的目标号提取(BUG-16):取首个引号外的 gh 点名词元序列——引号
+// 内的命令字样(注释体等数据值)不参与匹配,杜绝先命中引号内字样查错
+// 工单(旧版该形态恒 fail-closed 误拒,现按真实点名照常裁决);点名词元
+// 必须引号外且恰为纯数字
 function actionTargetNumber(action, command) {
-  const pattern = action === "issue-close"
-    ? /\bgh\s+issue\s+close\s+(\d+)/
-    : /\bgh\s+pr\s+merge\s+(\d+)/;
-  const match = String(command ?? "").match(pattern);
-  return match ? Number(match[1]) : null;
+  const verbs = action === "issue-close" ? ["gh", "issue", "close"] : ["gh", "pr", "merge"];
+  const tokens = tokenizeShellWords(command ?? "");
+  for (let index = 0; index + verbs.length < tokens.length; index += 1) {
+    const matches = verbs.every((verb, offset) => !tokens[index + offset].quoted && tokens[index + offset].text === verb);
+    if (!matches) continue;
+    const target = tokens[index + verbs.length];
+    if (target && !target.quoted && /^\d+$/.test(target.text)) return Number(target.text);
+  }
+  return null;
 }
 
 export function verifyStateAuthorization(root, { action, cwd, command }) {

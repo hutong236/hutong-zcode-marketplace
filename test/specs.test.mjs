@@ -170,12 +170,14 @@ test("dogfood specs in this repository pass their own validator", () => {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(archivedIds, ["BUG-15", "REQ-11", "REQ-14", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
+  assert.deepEqual(archivedIds, ["BUG-15", "BUG-16", "REQ-11", "REQ-14", "REQ-3", "REQ-5", "REQ-7", "REQ-9"]);
   // REQ-7 的 delta 是首个 MODIFIED 归档:两个能力各一个 MODIFIED 组;
   // REQ-11 的 delta:新能力四个 ADDED + 两个能力各展期一个 MODIFIED 条目;
   // REQ-14 的 delta:两个能力各一个 ADDED 组(互补不变量 + 作废终态);
-  // BUG-15 的 delta:lifecycle 一个 MODIFIED(作废终态整块重写)+ 一个 ADDED
-  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"], "REQ-14": ["ADDED", "ADDED"], "BUG-15": ["MODIFIED", "ADDED"] };
+  // BUG-15 的 delta:lifecycle 一个 MODIFIED(作废终态整块重写)+ 一个 ADDED;
+  // BUG-16 的 delta:lifecycle 一个 MODIFIED 组(作废终态 + 特权操作单调用
+  // 两个需求)+ release-workflow 一个 MODIFIED 组(release 令牌约束)
+  const expectedGroups = { "REQ-3": ["ADDED"], "REQ-5": ["ADDED"], "REQ-7": ["MODIFIED", "MODIFIED"], "REQ-9": ["ADDED"], "REQ-11": ["ADDED", "MODIFIED"], "REQ-14": ["ADDED", "ADDED"], "BUG-15": ["MODIFIED", "ADDED"], "BUG-16": ["MODIFIED", "MODIFIED"] };
   for (const id of archivedIds) {
     const delta = validateSpecFile(
       `openspec/changes/archive/${id}/${DELTA_SPEC_FILE}`,
@@ -225,6 +227,17 @@ test("dogfood specs in this repository pass their own validator", () => {
     "作废终态(abandoned)",
     "特权操作单调用与受控形态零误拒",
   ]);
+  // BUG-16 的 delta:两个能力各一个 MODIFIED 组——lifecycle 两个需求
+  // (重复旗标歧义 + 钉定锚定)+ release-workflow 一个需求(令牌约束锚定)
+  const bug16 = validateSpecFile(
+    `openspec/changes/archive/BUG-16/${DELTA_SPEC_FILE}`,
+    fs.readFileSync(path.join(archiveRoot, "BUG-16", DELTA_SPEC_FILE), "utf8"),
+  );
+  assert.deepEqual(bug16.groups.flatMap((group) => group.requirements), [
+    "作废终态(abandoned)",
+    "特权操作单调用与受控形态零误拒",
+    "release 令牌约束",
+  ]);
   // 主规格智能合并落位:两个需求块都在 lifecycle 主规格里,MODIFIED 块的
   // 3 个 reason 解析 scenario 与 ADDED 块的 7 个 scenario 齐全
   const lifecycle = validateSpecFile(
@@ -243,6 +256,8 @@ test("dogfood specs in this repository pass their own validator", () => {
     "标签与钩子终态语义",
     "注释体 reason 字样不构成携带",
     "注释体 reason 字样对 waiting_close 亦 fail-closed",
+    "重复 reason 旗标按歧义拒绝",
+    "旗标值内嵌 reason 字样按歧义拒绝",
     "受控关单形态与注释并存零误拒",
   ]);
   const guardRequirement = lifecycle.requirements.find((requirement) => requirement.name === "特权操作单调用与受控形态零误拒");
@@ -254,5 +269,25 @@ test("dogfood specs in this repository pass their own validator", () => {
     "消息体剥离与只读 tag 保持不计数",
     "白名单远端推送回归",
     "注释体数字不构成点名",
+    "钉死 SHA 与 tag 名锚定引号外",
+    "状态自证目标号取首个引号外点名",
+  ]);
+  // BUG-16 主规格合并落位(release 侧):令牌约束补引号外锚定条款与
+  // 消息体字样/受控形态两 scenario,其余 scenario 逐字保持
+  const release = validateSpecFile(
+    `${SPECS_DIR}/hulane-release-workflow/${CAPABILITY_SPEC_FILE}`,
+    fs.readFileSync(path.join(specsRoot, "hulane-release-workflow", CAPABILITY_SPEC_FILE), "utf8"),
+  );
+  const releaseTokenRequirement = release.requirements.find((requirement) => requirement.name === "release 令牌约束");
+  assert.deepEqual(releaseTokenRequirement.scenarios, [
+    "scope 钉死",
+    "annotated 形态保持",
+    "轻量蒙混拒",
+    "单次使用",
+    "TTL 过期",
+    "裸 tag 无令牌仍拒",
+    "工单 tag 路径回归不变",
+    "消息体字样不构成 release 点名",
+    "受控 release 形态零误拒保持",
   ]);
 });
