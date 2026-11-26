@@ -3,6 +3,18 @@
 All notable changes to `hulane` (formerly `cmdb-dev`) are recorded here.
 Versions follow Semantic Versioning.
 
+## [3.13.0] - 2026-11-26
+
+### Added
+
+- 作废（abandoned）终态与人工 `abandon` 事件（REQ-14）：状态机新增 done 之外的第二个终态，`abandon` 进 HUMAN_EVENTS（actor 必须 `human:<身份>`，requireHumanActor 拒绝 orchestrator），从任何非终态（含 blocked、waiting_tag_confirm）可达，只要非空 evidence 写明作废原因、不要求任何测试/评审/合并/镜像/规格同步证据；done 与 abandoned 双终态封闭（block/resume/abandon 均无法离开）；守卫关单认可 abandoned 且双向强制 `--reason "not planned"`（waiting_close 常规关单必须不携带）；`issue_closed` 在 abandoned 上自环回填 issue_state；issue_pending 工单可直接作废；sync 打 `hulane:abandoned` 标签；SessionStart/Stop 钩子把 abandoned 视为终态；新增 `/hulane_abandon` 命令（CI 命令计数 10→11）、SKILL 第 16/17 步作废流程（分支默认保留可打捞）、看板 abandoned 列。
+- 守卫解析层硬化（BUG-15）：`analyzeCommand` 去掉同动作去重，按受保护操作计数强制单操作——链式（双关单/双推送/双 tag/双 merge，含非 hulane 目录）在任何仓库/状态/令牌校验之前被拒且不烧令牌；零依赖 tokenizer `tokenizeShellWords`，`closeReasonState` 三态（注释体等数据值内 `--reason` 字样 tainted 优先拒绝并提示改写）、`commandHasNumber` 引号外词元匹配（数据值内数字不构成点名）；`TERMINAL_STATES` 改 frozen array + `isTerminalState()`；context.mjs 诊断拆分（store 读失败报真实原因，不再误报 not a Git worktree）；新增 `test/schema.test.mjs` 哨兵（status 枚举 deepEqual STATES、allOf 互补最小求值器）。
+- 守卫解析硬化二期（BUG-16）：`closeReasonState` 扩五态——≥2 真实 `--reason` 旗标按歧义拒绝（gh pflag last-wins，语义反转不得放行）、旗标值词元内含 `--reason` 字样按歧义拒绝；全部钉定点名改词元锚定（新判定族 `commandNamesValue`/`commandPinsFlagValue`）：`--match-head-commit`（分离+粘连认、带引号值拒）、git-tag 的 merged_sha、building 态 image_tag、release 双腿 version/sha——`-m` 消息体/`--comment`/`-c note=` 等数据值字样不再构成点名或钉死；`actionTargetNumber` 改首个引号外点名；release push 腿 refspec 判等与三重验证链零改动。
+
+### Changed
+
+- **Breaking**（REQ-14）：交付政策互补不变量——`delivery_required === skip_allowed` 一律非法（validateWorkItemInput 输入层、validateWorkItem 持久层、schema allOf 三层一致，true+true 与 false+false 同拒）；代码与 legacy CLI 缺省对齐文档默认 `(false, true)`。**破坏性说明**：含矛盾两旗工单的存量 state store 将整体不可读（fail-closed，视作数据损坏信号）；已知两仓 15 单全部互补，零迁移，schema_version 保持 2。两旗仍不进事件 patch 白名单（开单即冻结不变）。
+
 ## [3.12.0] - 2026-11-19
 
 ### Added
